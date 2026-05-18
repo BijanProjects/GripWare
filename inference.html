@@ -516,7 +516,7 @@
 
   .viewer-label {
     position: absolute;
-    top: 12px; left: 16px;
+    top: 12px; right: 16px;
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.25em;
@@ -537,6 +537,32 @@
 
   #viewer3d { width: 100%; height: 100%; }
   #viewer3d canvas { display: block; }
+
+  .home-view-btn {
+    display: none;
+    position: absolute;
+    top: 10px; left: 10px;
+    z-index: 3;
+    padding: 6px 12px;
+    font-family: inherit;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: rgba(10,14,10,0.85);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: all 0.15s;
+  }
+
+  .home-view-btn:hover {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  .home-view-btn.visible { display: block; }
 </style>
 </head>
 <body>
@@ -560,6 +586,7 @@
   <div class="main-layout">
     <div class="left-col">
       <div class="viewer-wrap">
+        <button class="home-view-btn" id="homeViewBtn">&#8962; Home View</button>
         <div class="viewer-label">3D Preview</div>
         <div class="viewer-hint">Orbit: drag · Zoom: scroll · Focus: double-click joint · Drag joint: control · Esc: reset view</div>
         <div id="viewer3d"></div>
@@ -1276,6 +1303,7 @@ log('Click "Connect Arduino" to begin.');
     }
 
     controls.update();
+    checkHomeBtn();
     renderer.render(scene, camera);
   }
 
@@ -1332,14 +1360,36 @@ log('Click "Connect Arduino" to begin.');
     log('Focus → ' + hit.key, 'l-tx');
   });
 
-  // Reset view on right-click double (or Escape)
+  // Home camera position
+  const HOME_TARGET = new THREE.Vector3(0, 5, 0);
+  const HOME_CAM    = new THREE.Vector3(12, 9, 12);
+  const homeBtn = document.getElementById('homeViewBtn');
+
+  function goHome() {
+    focusTarget = HOME_TARGET.clone();
+    focusCamPos = HOME_CAM.clone();
+    focusT = 0;
+    dragJoint = null;
+    renderer.domElement.style.cursor = '';
+    homeBtn.classList.remove('visible');
+  }
+
+  // Show/hide button based on camera drift from home
+  function checkHomeBtn() {
+    const dTarget = controls.target.distanceTo(HOME_TARGET);
+    const dCam    = camera.position.distanceTo(HOME_CAM);
+    if (dTarget > 0.5 || dCam > 1.0) {
+      homeBtn.classList.add('visible');
+    } else {
+      homeBtn.classList.remove('visible');
+    }
+  }
+
+  homeBtn.addEventListener('click', goHome);
+
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      focusTarget = new THREE.Vector3(0, 5, 0);
-      focusCamPos = new THREE.Vector3(12, 9, 12);
-      focusT = 0;
-      dragJoint = null;
-      renderer.domElement.style.cursor = '';
+      goHome();
       log('View reset', 'l-tx');
     }
   });
