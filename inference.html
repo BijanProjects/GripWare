@@ -1032,7 +1032,7 @@ log('Click "Connect Arduino" to begin.');
 
   wristBPivot.add(box(0.45, 0.35, 0.45, servoMat));
 
-  // GRIPPER — two parallel bars that slide open/closed
+  // GRIPPER — parallel jaw with two-prong forks
   const gripGroup = new THREE.Group();
   gripGroup.position.y = 0.35;
   wristBPivot.add(gripGroup);
@@ -1040,19 +1040,25 @@ log('Click "Connect Arduino" to begin.');
   gripGroup.add(box(0.5, 0.25, 0.65, fingerMat));
   gripGroup.add(at(box(0.52, 0.04, 0.67, accentMat), 0, 0.12, 0));
 
-  // Left finger (parallel bar)
+  // Left jaw (two parallel prongs + back plate)
   const lFinger = new THREE.Group();
-  lFinger.position.set(0, 0.1, 0.15);
+  lFinger.position.set(0, 0, 0.15);
   gripGroup.add(lFinger);
-  lFinger.add(at(box(0.08, 0.06, 1.1, fingerMat), 0, 0, 0.55));
-  lFinger.add(at(box(0.08, 0.12, 0.06, accentMat), 0, 0, 1.08));
+  lFinger.add(at(box(0.1, 0.38, 0.06, fingerMat), 0, 0, 0.03));      // back plate
+  lFinger.add(at(box(0.08, 0.06, 0.95, fingerMat), 0, 0.15, 0.5));   // top prong
+  lFinger.add(at(box(0.08, 0.06, 0.95, fingerMat), 0, -0.15, 0.5));  // bottom prong
+  lFinger.add(at(box(0.08, 0.06, 0.04, accentMat), 0, 0.15, 0.96));  // top tip
+  lFinger.add(at(box(0.08, 0.06, 0.04, accentMat), 0, -0.15, 0.96)); // bottom tip
 
-  // Right finger (parallel bar)
+  // Right jaw (two parallel prongs + back plate)
   const rFinger = new THREE.Group();
-  rFinger.position.set(0, 0.1, -0.15);
+  rFinger.position.set(0, 0, -0.15);
   gripGroup.add(rFinger);
-  rFinger.add(at(box(0.08, 0.06, 1.1, fingerMat), 0, 0, -0.55));
-  rFinger.add(at(box(0.08, 0.12, 0.06, accentMat), 0, 0, -1.08));
+  rFinger.add(at(box(0.1, 0.38, 0.06, fingerMat), 0, 0, -0.03));      // back plate
+  rFinger.add(at(box(0.08, 0.06, 0.95, fingerMat), 0, 0.15, -0.5));   // top prong
+  rFinger.add(at(box(0.08, 0.06, 0.95, fingerMat), 0, -0.15, -0.5));  // bottom prong
+  rFinger.add(at(box(0.08, 0.06, 0.04, accentMat), 0, 0.15, -0.96));  // top tip
+  rFinger.add(at(box(0.08, 0.06, 0.04, accentMat), 0, -0.15, -0.96)); // bottom tip
 
   // ─── Animation ───────────────────────────────────────────────
   let baseAngle = 0;
