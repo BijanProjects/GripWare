@@ -1032,7 +1032,7 @@ log('Click "Connect Arduino" to begin.');
 
   wristBPivot.add(box(0.45, 0.35, 0.45, servoMat));
 
-  // GRIPPER
+  // GRIPPER — two parallel bars that slide open/closed
   const gripGroup = new THREE.Group();
   gripGroup.position.y = 0.35;
   wristBPivot.add(gripGroup);
@@ -1040,19 +1040,19 @@ log('Click "Connect Arduino" to begin.');
   gripGroup.add(box(0.5, 0.25, 0.65, fingerMat));
   gripGroup.add(at(box(0.52, 0.04, 0.67, accentMat), 0, 0.12, 0));
 
-  // Left finger
-  const lFingerPivot = new THREE.Group();
-  lFingerPivot.position.set(0, 0.1, 0.32);
-  gripGroup.add(lFingerPivot);
-  lFingerPivot.add(at(box(0.1, 0.07, 0.85, fingerMat), 0, 0, 0.42));
-  lFingerPivot.add(at(box(0.1, 0.12, 0.07, accentMat), 0, 0, 0.82));
+  // Left finger (parallel bar)
+  const lFinger = new THREE.Group();
+  lFinger.position.set(0, 0.1, 0.15);
+  gripGroup.add(lFinger);
+  lFinger.add(at(box(0.08, 0.06, 1.1, fingerMat), 0, 0, 0.55));
+  lFinger.add(at(box(0.08, 0.12, 0.06, accentMat), 0, 0, 1.08));
 
-  // Right finger
-  const rFingerPivot = new THREE.Group();
-  rFingerPivot.position.set(0, 0.1, -0.32);
-  gripGroup.add(rFingerPivot);
-  rFingerPivot.add(at(box(0.1, 0.07, 0.85, fingerMat), 0, 0, -0.42));
-  rFingerPivot.add(at(box(0.1, 0.12, 0.07, accentMat), 0, 0, -0.82));
+  // Right finger (parallel bar)
+  const rFinger = new THREE.Group();
+  rFinger.position.set(0, 0.1, -0.15);
+  gripGroup.add(rFinger);
+  rFinger.add(at(box(0.08, 0.06, 1.1, fingerMat), 0, 0, -0.55));
+  rFinger.add(at(box(0.08, 0.12, 0.06, accentMat), 0, 0, -1.08));
 
   // ─── Animation ───────────────────────────────────────────────
   let baseAngle = 0;
@@ -1084,10 +1084,10 @@ log('Click "Connect Arduino" to begin.');
     // Wrist B — roll
     wristBPivot.rotation.y = (state.wristB - 90) * DEG;
 
-    // Gripper — open/close
-    const grip = (state.gripper - 90) * DEG * 0.35;
-    lFingerPivot.rotation.x = -grip;
-    rFingerPivot.rotation.x = grip;
+    // Gripper — parallel slide open/close
+    const gripOffset = (state.gripper - 90) / 90 * 0.4;
+    lFinger.position.z =  0.15 + gripOffset;
+    rFinger.position.z = -0.15 - gripOffset;
 
     controls.update();
     renderer.render(scene, camera);
