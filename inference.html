@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robot Arm Controller</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e0a;
+    --panel: #111811;
+    --panel-2: #0d130d;
+    --line: #1f2a1f;
+    --ink: #d4e8c8;
+    --ink-dim: #6a7a5e;
+    --accent: #b8ff3a;
+    --accent-dim: #7aa324;
+    --danger: #ff5a3a;
+    --warn: #ffb83a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.25;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+  }
+
+  header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 20px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .brand { display: flex; align-items: baseline; gap: 14px; }
+
+  .brand h1 {
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    font-size: clamp(1.4rem, 3vw, 2.2rem);
+    letter-spacing: -0.02em;
+  }
+
+  .brand h1 span { color: var(--accent); }
+
+  .brand .tag {
+    font-size: 0.7rem;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    border: 1px solid var(--line);
+    padding: 4px 8px;
+  }
+
+  .conn-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.75rem;
+  }
+
+  .status-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--danger);
+    box-shadow: 0 0 12px currentColor;
+    transition: background 0.3s;
+  }
+  .status-dot.ok   { background: var(--accent); }
+  .status-dot.warn { background: var(--warn); }
+
+  .status-text {
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--ink-dim);
+  }
+
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--ink);
+    padding: 10px 16px;
+    font-size: 0.75rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    transition: all 0.15s;
+  }
+
+  button:hover:not(:disabled) {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  button.primary {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+    font-weight: 700;
+  }
+
+  button.primary:hover:not(:disabled) {
+    background: transparent;
+    color: var(--accent);
+  }
+
+  .stop-all {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    background: rgba(255,90,58,0.12);
+    color: var(--danger);
+    border: 2px solid var(--danger);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .stop-all:hover { background: var(--danger); color: #fff; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 24px;
+  }
+
+  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 24px;
+    position: relative;
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: -1px; left: -1px;
+    width: 12px; height: 12px;
+    border-top: 2px solid var(--accent);
+    border-left: 2px solid var(--accent);
+  }
+
+  .panel::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; right: -1px;
+    width: 12px; height: 12px;
+    border-bottom: 2px solid var(--accent);
+    border-right: 2px solid var(--accent);
+  }
+
+  .panel-title {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    color: var(--ink-dim);
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .servos { display: flex; flex-direction: column; gap: 16px; }
+
+  .servo {
+    padding: 14px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    transition: border-color 0.2s;
+  }
+
+  .servo:hover { border-color: var(--accent-dim); }
+
+  .servo-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .servo-label { font-size: 0.8rem; font-weight: 700; }
+
+  .servo-label .pin {
+    font-size: 0.6rem;
+    color: var(--ink-dim);
+    letter-spacing: 0.1em;
+    margin-left: 8px;
+  }
+
+  .type-tag {
+    font-size: 0.55rem;
+    padding: 2px 6px;
+    border: 1px solid var(--ink-dim);
+    color: var(--ink-dim);
+    letter-spacing: 0.1em;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  .type-tag.cr { border-color: var(--warn); color: var(--warn); }
+
+  .servo-status {
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    font-size: 0.9rem;
+    text-align: right;
+    min-width: 90px;
+  }
+
+  .servo-status.stopped { color: var(--ink-dim); }
+  .servo-status.moving  { color: var(--warn); }
+
+  .servo-value {
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    font-size: 1.1rem;
+    text-align: right;
+    color: var(--accent);
+    min-width: 60px;
+  }
+
+  .servo-value .unit { font-size: 0.65rem; color: var(--ink-dim); margin-left: 2px; }
+
+  .cr-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .jog-btn {
+    flex: 1;
+    padding: 12px 8px;
+    font-family: inherit;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    text-align: center;
+    transition: all 0.1s;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+
+  .jog-btn:hover { border-color: var(--ink); }
+
+  .jog-btn.active {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+    box-shadow: 0 0 12px rgba(184,255,58,0.3);
+  }
+
+  .jog-btn.stop-servo {
+    flex: 0.6;
+    border-color: var(--danger);
+    color: var(--danger);
+    font-size: 0.65rem;
+  }
+
+  .jog-btn.stop-servo:hover,
+  .jog-btn.stop-servo:active {
+    background: var(--danger);
+    color: #fff;
+    border-color: var(--danger);
+  }
+
+  .speed-row { display: flex; align-items: center; gap: 10px; }
+
+  .speed-label {
+    font-size: 0.6rem;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+
+  .speed-val {
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    font-size: 0.75rem;
+    color: var(--accent);
+    min-width: 36px;
+    text-align: right;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: var(--line);
+    outline: none;
+    border-radius: 0;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 22px;
+    background: var(--accent);
+    cursor: grab;
+    border-radius: 0;
+    box-shadow: 0 0 8px rgba(184,255,58,0.4);
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 22px;
+    background: var(--accent);
+    cursor: grab;
+    border: none;
+    border-radius: 0;
+  }
+
+  .speed-row input[type="range"] { height: 3px; flex: 1; }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    font-size: 0.75rem;
+  }
+
+  .checkbox-row input[type="checkbox"] {
+    appearance: none;
+    width: 16px; height: 16px;
+    border: 1px solid var(--ink-dim);
+    background: transparent;
+    cursor: pointer;
+    position: relative;
+  }
+
+  .checkbox-row input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .checkbox-row input[type="checkbox"]:checked::after {
+    content: '\2713';
+    position: absolute;
+    top: -3px; left: 2px;
+    color: var(--bg);
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 20px;
+  }
+
+  .actions button { padding: 12px; font-size: 0.7rem; }
+
+  .log {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.7rem;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    padding: 12px;
+    height: 220px;
+    overflow-y: auto;
+    color: var(--ink-dim);
+    line-height: 1.7;
+  }
+
+  .log::-webkit-scrollbar { width: 6px; }
+  .log::-webkit-scrollbar-track { background: var(--panel-2); }
+  .log::-webkit-scrollbar-thumb { background: var(--line); }
+
+  .log .l-tx  { color: var(--accent); }
+  .log .l-rx  { color: var(--warn); }
+  .log .l-err { color: var(--danger); }
+
+  .side { display: flex; flex-direction: column; gap: 24px; }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--line);
+    font-size: 0.8rem;
+  }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-row .k { color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.7rem; }
+  .stat-row .v { color: var(--accent); font-weight: 700; }
+
+  .warn-box {
+    border: 1px solid var(--warn);
+    background: rgba(255,184,58,0.06);
+    padding: 14px;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: var(--ink);
+  }
+
+  .warn-box strong {
+    color: var(--warn);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.7rem;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  footer {
+    margin-top: 32px;
+    font-size: 0.7rem;
+    color: var(--ink-dim);
+    text-align: center;
+    letter-spacing: 0.1em;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <h1>ARM<span>/</span>CTRL</h1>
+      <div class="tag">7-DOF Serial Bridge</div>
+    </div>
+    <div class="conn-bar">
+      <div class="status-dot" id="statusDot"></div>
+      <div class="status-text" id="statusText">Disconnected</div>
+      <button id="connectBtn" class="primary">Connect Arduino</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+    </div>
+  </header>
+
+  <div class="stop-all" id="stopAllBtn">EMERGENCY STOP</div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="panel-title">
+        <span>Servo Control</span>
+        <span id="pktCount">0 packets sent</span>
+      </div>
+
+      <div class="servos" id="servos"></div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="liveSend" checked>
+        <label for="liveSend">Live send on slider change</label>
+      </div>
+
+      <div class="actions">
+        <button id="sendBtn">Send Now</button>
+        <button id="homeBtn">Home / Stop All</button>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="panel">
+        <div class="panel-title">Connection</div>
+        <div class="stat-row"><span class="k">Baud</span><span class="v">9600</span></div>
+        <div class="stat-row"><span class="k">Protocol</span><span class="v">ACK handshake</span></div>
+        <div class="stat-row"><span class="k">CR Servos</span><span class="v">Base only</span></div>
+        <div class="stat-row"><span class="k">POS Servos</span><span class="v">Arm A, Arm B, Wrist, Grip</span></div>
+        <div class="stat-row"><span class="k">Browser</span><span class="v" id="browserOK">Checking...</span></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Serial Log</div>
+        <div class="log" id="log"></div>
+      </div>
+
+      <div class="warn-box">
+        <strong>Power Warning</strong>
+        Do NOT power 7 servos through the Arduino 5V pin. Feed servo VCC from an external 5V supply and share GND with the Arduino. Power Arduino via USB.
+      </div>
+    </div>
+  </div>
+
+  <footer>Web Serial API · Chrome / Edge only · Plug Arduino via USB before connecting</footer>
+
+</div>
+<script>
+// ─── Servo definitions ────────────────────────────────────────────────────────
+const SERVOS = [
+  { key: 'root',    label: 'Base (Root)', pin: 'D3',            type: 'cr',  home: 90 },
+  { key: 'armA',    label: 'Arm A1/A2',   pin: 'D4+D5 mirror', type: 'pos', min: 0, max: 180, home: 90 },
+  { key: 'armB',    label: 'Arm B',       pin: 'D6',            type: 'pos', min: 0, max: 180, home: 90 },
+  { key: 'wristA',  label: 'Wrist A',     pin: 'D9',            type: 'pos', min: 0, max: 180, home: 90 },
+  { key: 'wristB',  label: 'Wrist B',     pin: 'D10',           type: 'pos', min: 0, max: 180, home: 90 },
+  { key: 'gripper', label: 'Gripper',     pin: 'D11',           type: 'pos', min: 0, max: 180, home: 90 },
+];
+
+// ─── State ────────────────────────────────────────────────────────────────────
+const state  = Object.fromEntries(SERVOS.map(s => [s.key, s.home]));
+const speeds = Object.fromEntries(SERVOS.filter(s => s.type === 'cr').map(s => [s.key, 50]));
+const jogTimers = {};
+
+let port = null, writer = null, reader = null;
+let readLoopAbort = false;
+let pktCount = 0;
+
+// ─── Send queue ───────────────────────────────────────────────────────────────
+let sendBusy    = false;
+let sendPending = false;
+
+async function schedulePacket() {
+  if (!writer) return;
+  if (sendBusy) { sendPending = true; return; }
+  await flushPacket();
+}
+
+async function flushPacket() {
+  if (!writer) return;
+  sendBusy    = true;
+  sendPending = false;
+
+  const pkt = `${state.root} ${state.armA} ${state.armB} ${state.wristA} ${state.wristB} ${state.gripper}\n`;
+  try {
+    await writer.write(new TextEncoder().encode(pkt));
+    pktCount++;
+    document.getElementById('pktCount').textContent = `${pktCount} packets sent`;
+    log('TX → ' + pkt.trim(), 'l-tx');
+  } catch (e) {
+    log('Write failed: ' + e.message, 'l-err');
+    sendBusy = false;
+    return;
+  }
+
+  // ACK timeout — unblock queue if Arduino doesn't reply within 400 ms
+  setTimeout(() => {
+    if (sendBusy) {
+      log('ACK timeout — unblocking queue', 'l-err');
+      sendBusy = false;
+      if (sendPending) flushPacket();
+    }
+  }, 400);
+}
+
+function onArduinoLine(line) {
+  log('RX ← ' + line, 'l-rx');
+  if (line.startsWith('OK') || line === 'ERR' || line === 'READY') {
+    sendBusy = false;
+    if (sendPending) flushPacket();
+  }
+}
+
+function sendPacket() { schedulePacket(); }
+
+// ─── Build UI ─────────────────────────────────────────────────────────────────
+const servosEl = document.getElementById('servos');
+
+SERVOS.forEach(s => {
+  const row = document.createElement('div');
+  row.className = 'servo';
+
+  if (s.type === 'cr') {
+    row.innerHTML = `
+      <div class="servo-header">
+        <div class="servo-label">
+          ${s.label}<span class="pin">${s.pin}</span>
+          <span class="type-tag cr">CONTINUOUS</span>
+        </div>
+        <div class="servo-status stopped" data-status="${s.key}">STOPPED</div>
+      </div>
+      <div class="cr-controls">
+        <div class="jog-btn" data-key="${s.key}" data-dir="cw">&#9664; CW</div>
+        <div class="jog-btn stop-servo" data-key="${s.key}" data-dir="stop">STOP</div>
+        <div class="jog-btn" data-key="${s.key}" data-dir="ccw">CCW &#9654;</div>
+      </div>
+      <div class="speed-row">
+        <span class="speed-label">Speed</span>
+        <input type="range" min="10" max="100" value="50" data-speed="${s.key}">
+        <span class="speed-val" data-speedval="${s.key}">50%</span>
+      </div>`;
+  } else {
+    row.innerHTML = `
+      <div class="servo-header">
+        <div class="servo-label">
+          ${s.label}<span class="pin">${s.pin}</span>
+          <span class="type-tag">POSITION</span>
+        </div>
+        <div class="servo-value"><span data-val="${s.key}">${s.home}</span><span class="unit">&deg;</span></div>
+      </div>
+      <input type="range" min="${s.min}" max="${s.max}" value="${s.home}" data-key="${s.key}">`;
+  }
+
+  servosEl.appendChild(row);
+});
+
+// ─── Slider events ────────────────────────────────────────────────────────────
+servosEl.addEventListener('input', e => {
+  if (e.target.type !== 'range') return;
+
+  const speedKey = e.target.dataset.speed;
+  if (speedKey) {
+    const v = parseInt(e.target.value, 10);
+    speeds[speedKey] = v;
+    document.querySelector(`[data-speedval="${speedKey}"]`).textContent = v + '%';
+    if (jogTimers[speedKey]) updateJogSpeed(speedKey);
+    return;
+  }
+
+  const key = e.target.dataset.key;
+  if (!key) return;
+  const servo = SERVOS.find(s => s.key === key);
+  if (!servo || servo.type !== 'pos') return;
+
+  const v = parseInt(e.target.value, 10);
+  state[key] = v;
+  document.querySelector(`[data-val="${key}"]`).textContent = v;
+  if (document.getElementById('liveSend').checked) sendPacket();
+});
+
+// ─── CR jog logic ─────────────────────────────────────────────────────────────
+function startJog(key, dir) {
+  if (jogTimers[key]) { clearInterval(jogTimers[key]); delete jogTimers[key]; }
+
+  const speed = speeds[key] || 50;
+  state[key] = dir === 'cw'
+    ? Math.round(90 - speed * 90 / 100)
+    : Math.round(90 + speed * 90 / 100);
+
+  const statusEl = document.querySelector(`[data-status="${key}"]`);
+  if (statusEl) {
+    statusEl.textContent = dir === 'cw' ? '◀ CW ' + speed + '%' : 'CCW ' + speed + '% ▶';
+    statusEl.className = 'servo-status moving';
+  }
+
+  sendPacket();
+  jogTimers[key] = setInterval(sendPacket, 250);
+}
+
+function updateJogSpeed(key) {
+  if (state[key] === 90) return;
+  const dir = state[key] < 90 ? 'cw' : 'ccw';
+  const speed = speeds[key] || 50;
+  state[key] = dir === 'cw'
+    ? Math.round(90 - speed * 90 / 100)
+    : Math.round(90 + speed * 90 / 100);
+
+  const statusEl = document.querySelector(`[data-status="${key}"]`);
+  if (statusEl)
+    statusEl.textContent = dir === 'cw' ? '◀ CW ' + speed + '%' : 'CCW ' + speed + '% ▶';
+}
+
+function stopJog(key) {
+  if (jogTimers[key]) { clearInterval(jogTimers[key]); delete jogTimers[key]; }
+  state[key] = 90;
+
+  const statusEl = document.querySelector(`[data-status="${key}"]`);
+  if (statusEl) {
+    statusEl.textContent = 'STOPPED';
+    statusEl.className = 'servo-status stopped';
+  }
+
+  document.querySelectorAll(`.jog-btn[data-key="${key}"]`).forEach(b => b.classList.remove('active'));
+  sendPacket();
+}
+
+function stopAll() {
+  SERVOS.forEach(s => {
+    if (s.type === 'cr') {
+      if (jogTimers[s.key]) { clearInterval(jogTimers[s.key]); delete jogTimers[s.key]; }
+      state[s.key] = 90;
+      const statusEl = document.querySelector(`[data-status="${s.key}"]`);
+      if (statusEl) { statusEl.textContent = 'STOPPED'; statusEl.className = 'servo-status stopped'; }
+      document.querySelectorAll(`.jog-btn[data-key="${s.key}"]`).forEach(b => b.classList.remove('active'));
+    } else {
+      state[s.key] = s.home;
+      const slider = document.querySelector(`input[data-key="${s.key}"]`);
+      if (slider) slider.value = s.home;
+      const valEl = document.querySelector(`[data-val="${s.key}"]`);
+      if (valEl) valEl.textContent = s.home;
+    }
+  });
+
+  sendBusy    = false;
+  sendPending = false;
+  flushPacket();
+  log('STOP ALL — base stopped, all position servos homed.', 'l-err');
+}
+
+// ─── Jog button events ────────────────────────────────────────────────────────
+document.querySelectorAll('.jog-btn').forEach(btn => {
+  const key = btn.dataset.key;
+  const dir = btn.dataset.dir;
+
+  if (dir === 'stop') {
+    btn.addEventListener('mousedown',  () => stopJog(key));
+    btn.addEventListener('touchstart', e => { e.preventDefault(); stopJog(key); });
+    return;
+  }
+
+  const onStart = e => {
+    if (e.type === 'touchstart') e.preventDefault();
+    btn.classList.add('active');
+    startJog(key, dir);
+  };
+  const onEnd = () => {
+    btn.classList.remove('active');
+    stopJog(key);
+  };
+
+  btn.addEventListener('mousedown',   onStart);
+  btn.addEventListener('mouseup',     onEnd);
+  btn.addEventListener('mouseleave',  onEnd);
+  btn.addEventListener('touchstart',  onStart);
+  btn.addEventListener('touchend',    onEnd);
+  btn.addEventListener('touchcancel', onEnd);
+});
+
+window.addEventListener('blur', () => {
+  SERVOS.filter(s => s.type === 'cr').forEach(s => stopJog(s.key));
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) SERVOS.filter(s => s.type === 'cr').forEach(s => stopJog(s.key));
+});
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function log(msg, cls = '') {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  while (el.childNodes.length > 200) el.removeChild(el.firstChild);
+}
+
+function setStatus(text, cls = '') {
+  document.getElementById('statusText').textContent = text;
+  const dot = document.getElementById('statusDot');
+  dot.classList.remove('ok', 'warn');
+  if (cls) dot.classList.add(cls);
+}
+
+// ─── Web Serial ───────────────────────────────────────────────────────────────
+if (!('serial' in navigator)) {
+  document.getElementById('browserOK').textContent = 'NOT SUPPORTED';
+  document.getElementById('browserOK').style.color = 'var(--danger)';
+  document.getElementById('connectBtn').disabled = true;
+  log('Web Serial API not available. Use Chrome or Edge.', 'l-err');
+} else {
+  document.getElementById('browserOK').textContent = 'OK';
+}
+
+document.getElementById('connectBtn').onclick = async () => {
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 9600 });
+    writer = port.writable.getWriter();
+    setStatus('Connected', 'ok');
+    document.getElementById('connectBtn').disabled    = true;
+    document.getElementById('disconnectBtn').disabled = false;
+    log('Port opened at 9600 baud. Waiting 2s for Arduino reset...');
+    readLoop();
+    setTimeout(() => {
+      if (sendBusy) { sendBusy = false; }
+      log('Ready. Sending initial safe packet...');
+      sendPacket();
+    }, 2500);
+  } catch (e) {
+    log('Connect failed: ' + e.message, 'l-err');
+    setStatus('Error', 'warn');
+  }
+};
+
+document.getElementById('disconnectBtn').onclick = async () => {
+  readLoopAbort = true;
+  try {
+    if (writer) { try { writer.releaseLock(); } catch(e){} writer = null; }
+    if (reader) { try { await reader.cancel(); } catch(e){} reader = null; }
+    if (port)   { await port.close(); port = null; }
+    setStatus('Disconnected');
+    document.getElementById('connectBtn').disabled    = false;
+    document.getElementById('disconnectBtn').disabled = true;
+    sendBusy = false; sendPending = false;
+    log('Port closed.');
+  } catch (e) {
+    log('Disconnect error: ' + e.message, 'l-err');
+  }
+};
+
+async function readLoop() {
+  readLoopAbort = false;
+  try {
+    reader = port.readable.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (!readLoopAbort) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value);
+      let idx;
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (line) onArduinoLine(line);
+      }
+    }
+  } catch (e) {
+    if (!readLoopAbort) log('Read error: ' + e.message, 'l-err');
+  } finally {
+    if (reader) { try { reader.releaseLock(); } catch(e){} reader = null; }
+  }
+}
+
+// ─── Button wiring ────────────────────────────────────────────────────────────
+document.getElementById('sendBtn').onclick    = sendPacket;
+document.getElementById('homeBtn').onclick    = stopAll;
+document.getElementById('stopAllBtn').onclick = stopAll;
+
+log('Interface loaded. ACK handshake enabled — one packet in flight at a time.');
+log('Click "Connect Arduino" to begin.');
+</script>
+</body>
+</html>
