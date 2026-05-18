@@ -1259,6 +1259,32 @@ log('Click "Connect Arduino" to begin.');
   jointMap['wristB']  = { pivot: wristBPivot,    focusGroup: wristBPivot,   type: 'pos', min: 0, max: 180 };
   jointMap['gripper'] = { pivot: gripGroup,      focusGroup: gripGroup,     type: 'pos', min: 0, max: 180 };
 
+  // ─── Home view & camera helpers ──────────────────────────────
+  const HOME_TARGET = new THREE.Vector3(0, 5, 0);
+  const HOME_CAM    = new THREE.Vector3(12, 9, 12);
+  const homeBtn = document.getElementById('homeViewBtn');
+
+  function goHome() {
+    focusTarget = HOME_TARGET.clone();
+    focusCamPos = HOME_CAM.clone();
+    focusT = 0;
+    dragJoint = null;
+    renderer.domElement.style.cursor = '';
+    homeBtn.classList.remove('visible');
+  }
+
+  function checkHomeBtn() {
+    const dTarget = controls.target.distanceTo(HOME_TARGET);
+    const dCam    = camera.position.distanceTo(HOME_CAM);
+    if (dTarget > 0.5 || dCam > 1.0) {
+      homeBtn.classList.add('visible');
+    } else {
+      homeBtn.classList.remove('visible');
+    }
+  }
+
+  homeBtn.addEventListener('click', goHome);
+
   // ─── Animation ───────────────────────────────────────────────
   let baseAngle = 0;
   const clock = new THREE.Clock();
@@ -1359,33 +1385,6 @@ log('Click "Connect Arduino" to begin.');
     focusT = 0;
     log('Focus → ' + hit.key, 'l-tx');
   });
-
-  // Home camera position
-  const HOME_TARGET = new THREE.Vector3(0, 5, 0);
-  const HOME_CAM    = new THREE.Vector3(12, 9, 12);
-  const homeBtn = document.getElementById('homeViewBtn');
-
-  function goHome() {
-    focusTarget = HOME_TARGET.clone();
-    focusCamPos = HOME_CAM.clone();
-    focusT = 0;
-    dragJoint = null;
-    renderer.domElement.style.cursor = '';
-    homeBtn.classList.remove('visible');
-  }
-
-  // Show/hide button based on camera drift from home
-  function checkHomeBtn() {
-    const dTarget = controls.target.distanceTo(HOME_TARGET);
-    const dCam    = camera.position.distanceTo(HOME_CAM);
-    if (dTarget > 0.5 || dCam > 1.0) {
-      homeBtn.classList.add('visible');
-    } else {
-      homeBtn.classList.remove('visible');
-    }
-  }
-
-  homeBtn.addEventListener('click', goHome);
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
