@@ -47,9 +47,36 @@
   .wrap {
     position: relative;
     z-index: 1;
-    max-width: 1400px;
+    max-width: 1600px;
     margin: 0 auto;
     padding: 32px 24px 64px;
+  }
+
+  .main-layout {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 24px;
+    align-items: start;
+  }
+
+  .left-col {
+    position: sticky;
+    top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .right-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 0;
+  }
+
+  @media (max-width: 1100px) {
+    .main-layout { grid-template-columns: 1fr; }
+    .left-col { position: static; }
   }
 
   header {
@@ -159,12 +186,10 @@
   .stop-all:hover { background: var(--danger); color: #fff; }
 
   .grid {
-    display: grid;
-    grid-template-columns: 1fr 380px;
-    gap: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
   }
-
-  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
 
   .panel {
     background: var(--panel);
@@ -420,7 +445,7 @@
   .log .l-rx  { color: var(--warn); }
   .log .l-err { color: var(--danger); }
 
-  .side { display: flex; flex-direction: column; gap: 24px; }
+  .side { display: flex; flex-direction: column; gap: 16px; }
 
   .stat-row {
     display: flex;
@@ -463,8 +488,9 @@
     position: relative;
     background: var(--panel);
     border: 1px solid var(--line);
-    margin-bottom: 24px;
-    height: 420px;
+    height: calc(100vh - 160px);
+    min-height: 400px;
+    max-height: 800px;
     overflow: hidden;
   }
 
@@ -531,50 +557,54 @@
 
   <div class="stop-all" id="stopAllBtn">EMERGENCY STOP</div>
 
-  <div class="viewer-wrap">
-    <div class="viewer-label">3D Preview</div>
-    <div class="viewer-hint">Drag to orbit · Scroll to zoom</div>
-    <div id="viewer3d"></div>
-  </div>
-
-  <div class="grid">
-    <div class="panel">
-      <div class="panel-title">
-        <span>Servo Control</span>
-        <span id="pktCount">0 packets sent</span>
-      </div>
-
-      <div class="servos" id="servos"></div>
-
-      <div class="checkbox-row">
-        <input type="checkbox" id="liveSend" checked>
-        <label for="liveSend">Live send on slider change</label>
-      </div>
-
-      <div class="actions">
-        <button id="sendBtn">Send Now</button>
-        <button id="homeBtn">Home / Stop All</button>
+  <div class="main-layout">
+    <div class="left-col">
+      <div class="viewer-wrap">
+        <div class="viewer-label">3D Preview</div>
+        <div class="viewer-hint">Drag to orbit · Scroll to zoom</div>
+        <div id="viewer3d"></div>
       </div>
     </div>
 
-    <div class="side">
-      <div class="panel">
-        <div class="panel-title">Connection</div>
-        <div class="stat-row"><span class="k">Baud</span><span class="v">9600</span></div>
-        <div class="stat-row"><span class="k">Protocol</span><span class="v">ACK handshake</span></div>
-        <div class="stat-row"><span class="k">CR Servos</span><span class="v">Base only</span></div>
-        <div class="stat-row"><span class="k">POS Servos</span><span class="v">Arm A, Arm B, Wrist, Grip</span></div>
-        <div class="stat-row"><span class="k">Browser</span><span class="v" id="browserOK">Checking...</span></div>
-      </div>
+    <div class="right-col">
+      <div class="grid">
+        <div class="panel">
+          <div class="panel-title">
+            <span>Servo Control</span>
+            <span id="pktCount">0 packets sent</span>
+          </div>
 
-      <div class="panel">
-        <div class="panel-title">Serial Log</div>
-        <div class="log" id="log"></div>
-      </div>
+          <div class="servos" id="servos"></div>
 
-      <div class="warn-box">
-        <strong>Power Warning</strong>
-        Do NOT power 7 servos through the Arduino 5V pin. Feed servo VCC from an external 5V supply and share GND with the Arduino. Power Arduino via USB.
+          <div class="checkbox-row">
+            <input type="checkbox" id="liveSend" checked>
+            <label for="liveSend">Live send on slider change</label>
+          </div>
+
+          <div class="actions">
+            <button id="sendBtn">Send Now</button>
+            <button id="homeBtn">Home / Stop All</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Connection</div>
+          <div class="stat-row"><span class="k">Baud</span><span class="v">9600</span></div>
+          <div class="stat-row"><span class="k">Protocol</span><span class="v">ACK handshake</span></div>
+          <div class="stat-row"><span class="k">CR Servos</span><span class="v">Base only</span></div>
+          <div class="stat-row"><span class="k">POS Servos</span><span class="v">Arm A, Arm B, Wrist, Grip</span></div>
+          <div class="stat-row"><span class="k">Browser</span><span class="v" id="browserOK">Checking...</span></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Serial Log</div>
+          <div class="log" id="log"></div>
+        </div>
+
+        <div class="warn-box">
+          <strong>Power Warning</strong>
+          Do NOT power 7 servos through the Arduino 5V pin. Feed servo VCC from an external 5V supply and share GND with the Arduino. Power Arduino via USB.
+        </div>
       </div>
     </div>
   </div>
