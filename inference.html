@@ -561,7 +561,7 @@
     <div class="left-col">
       <div class="viewer-wrap">
         <div class="viewer-label">3D Preview</div>
-        <div class="viewer-hint">Drag to orbit · Scroll to zoom</div>
+        <div class="viewer-hint">Orbit: drag · Zoom: scroll · Focus: double-click joint · Drag joint: control · Esc: reset view</div>
         <div id="viewer3d"></div>
       </div>
     </div>
@@ -977,9 +977,38 @@ log('Click "Connect Arduino" to begin.');
   controls.target.set(0, 5, 0);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
-  controls.minDistance = 5;
+  controls.minDistance = 2;
   controls.maxDistance = 25;
   controls.update();
+
+  // ─── Focus targets & interaction state ───────────────────────
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+  let focusTarget = null;        // smooth-focus destination
+  let focusCamPos = null;
+  let focusT = 1;                // 0→1 interpolation progress
+
+  let dragJoint = null;          // which joint key is being dragged
+  let dragStartY = 0;            // mouse Y at drag start
+  let dragStartVal = 0;          // servo value at drag start
+
+  // Map: jointKey → { pivot, focusGroup, type, axis }
+  const jointMap = {};
+
+  function tagMeshes(group, key) {
+    group.traverse(child => {
+      if (child.isMesh) child.userData.jointKey = key;
+    });
+  }
+
+  function syncSlider(key, val) {
+    state[key] = val;
+    const slider = document.querySelector(`input[data-key="${key}"]`);
+    if (slider) { slider.value = val; }
+    const valEl = document.querySelector(`[data-val="${key}"]`);
+    if (valEl) valEl.textContent = val;
+    if (document.getElementById('liveSend').checked) sendPacket();
+  }
 
   // Lights — studio-style three-point
   scene.add(new THREE.AmbientLight(0x404050, 0.6));
@@ -1173,6 +1202,36 @@ log('Click "Connect Arduino" to begin.');
   rFinger.add(at(box(0.06, 0.04, 0.4, accentMat), 0, 0.32, 0));     // tip stripe
   rFinger.add(at(box(0.04, 0.55, 0.02, darkMat), 0, 0.0, -0.19));   // inner grip pad
 
+  // ─── Tag joints for interaction ──────────────────────────────
+  tagMeshes(baseGroup, 'root');
+  tagMeshes(shoulderPivot, 'armA');
+  tagMeshes(elbowPivot, 'armB');
+  tagMeshes(wristAPivot, 'wristA');
+  tagMeshes(wristBPivot, 'wristB');
+  tagMeshes(gripGroup, 'gripper');
+  // Override: shoulder children that belong to elbow, etc — deeper tags win
+  // Re-tag more specifically so each group only claims its own geometry
+  shoulderPivot.children.forEach(c => {
+    if (c !== elbowPivot) tagMeshes(c.isMesh ? c : c, 'armA');
+  });
+  elbowPivot.children.forEach(c => {
+    if (c !== wristAPivot) tagMeshes(c.isMesh ? c : c, 'armB');
+  });
+  wristAPivot.children.forEach(c => {
+    if (c !== wristBPivot) tagMeshes(c.isMesh ? c : c, 'wristA');
+  });
+  wristBPivot.children.forEach(c => {
+    if (c !== gripGroup) tagMeshes(c.isMesh ? c : c, 'wristB');
+  });
+  tagMeshes(gripGroup, 'gripper');
+
+  jointMap['root']    = { pivot: baseGroup,     focusGroup: baseGroup,     type: 'cr' };
+  jointMap['armA']    = { pivot: shoulderPivot,  focusGroup: shoulderPivot, type: 'pos', min: 0, max: 180 };
+  jointMap['armB']    = { pivot: elbowPivot,     focusGroup: elbowPivot,    type: 'pos', min: 0, max: 180 };
+  jointMap['wristA']  = { pivot: wristAPivot,    focusGroup: wristAPivot,   type: 'pos', min: 0, max: 180 };
+  jointMap['wristB']  = { pivot: wristBPivot,    focusGroup: wristBPivot,   type: 'pos', min: 0, max: 180 };
+  jointMap['gripper'] = { pivot: gripGroup,      focusGroup: gripGroup,     type: 'pos', min: 0, max: 180 };
+
   // ─── Animation ───────────────────────────────────────────────
   let baseAngle = 0;
   const clock = new THREE.Clock();
@@ -1208,6 +1267,14 @@ log('Click "Connect Arduino" to begin.');
     lFinger.position.x =  0.15 + gripOffset;
     rFinger.position.x = -0.15 - gripOffset;
 
+    // Smooth camera focus
+    if (focusT < 1) {
+      focusT = Math.min(focusT + 1.8 * dt, 1);
+      const t = 1 - Math.pow(1 - focusT, 3);  // ease-out cubic
+      controls.target.lerp(focusTarget, t);
+      camera.position.lerp(focusCamPos, t);
+    }
+
     controls.update();
     renderer.render(scene, camera);
   }
@@ -1222,6 +1289,108 @@ log('Click "Connect Arduino" to begin.');
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
+  });
+
+  // ─── Mouse interaction ─────────────────────────────────────────
+  function getMouseNDC(e) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+    mouse.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+  }
+
+  function hitTest(e) {
+    getMouseNDC(e);
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(scene.children, true);
+    for (const h of hits) {
+      const key = h.object.userData.jointKey;
+      if (key) return { key, point: h.point };
+    }
+    return null;
+  }
+
+  // Double-click → focus camera on that joint
+  renderer.domElement.addEventListener('dblclick', e => {
+    const hit = hitTest(e);
+    if (!hit) return;
+
+    const jm = jointMap[hit.key];
+    if (!jm) return;
+
+    // Compute world center of the focus group
+    const worldPos = new THREE.Vector3();
+    jm.focusGroup.getWorldPosition(worldPos);
+
+    focusTarget = worldPos.clone();
+
+    // Position camera at a nice offset from the target
+    const dir = camera.position.clone().sub(controls.target).normalize();
+    const dist = hit.key === 'gripper' || hit.key === 'wristA' || hit.key === 'wristB' ? 4 : 7;
+    focusCamPos = worldPos.clone().add(dir.multiplyScalar(dist));
+
+    focusT = 0;
+    log('Focus → ' + hit.key, 'l-tx');
+  });
+
+  // Reset view on right-click double (or Escape)
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      focusTarget = new THREE.Vector3(0, 5, 0);
+      focusCamPos = new THREE.Vector3(12, 9, 12);
+      focusT = 0;
+      dragJoint = null;
+      renderer.domElement.style.cursor = '';
+      log('View reset', 'l-tx');
+    }
+  });
+
+  // ─── Drag joints to control ──────────────────────────────────
+  let isDragging = false;
+
+  renderer.domElement.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const hit = hitTest(e);
+    if (!hit) return;
+
+    const jm = jointMap[hit.key];
+    if (!jm || jm.type === 'cr') return;  // can't drag CR servo
+
+    dragJoint = hit.key;
+    dragStartY = e.clientY;
+    dragStartVal = state[hit.key];
+    isDragging = false;
+    controls.enabled = false;
+    renderer.domElement.style.cursor = 'ns-resize';
+    e.preventDefault();
+  });
+
+  window.addEventListener('pointermove', e => {
+    if (!dragJoint) {
+      // Hover highlight cursor
+      const hit = hitTest(e);
+      if (hit && jointMap[hit.key] && jointMap[hit.key].type !== 'cr') {
+        renderer.domElement.style.cursor = 'grab';
+      } else {
+        renderer.domElement.style.cursor = '';
+      }
+      return;
+    }
+
+    isDragging = true;
+    const dy = dragStartY - e.clientY;
+    const sensitivity = 0.5;
+    const jm = jointMap[dragJoint];
+    let newVal = Math.round(dragStartVal + dy * sensitivity);
+    newVal = Math.max(jm.min, Math.min(jm.max, newVal));
+    syncSlider(dragJoint, newVal);
+  });
+
+  window.addEventListener('pointerup', () => {
+    if (dragJoint) {
+      controls.enabled = true;
+      renderer.domElement.style.cursor = '';
+      dragJoint = null;
+    }
   });
 })();
 </script>
