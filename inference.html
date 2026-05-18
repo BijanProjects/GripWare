@@ -1032,33 +1032,28 @@ log('Click "Connect Arduino" to begin.');
 
   wristBPivot.add(box(0.45, 0.35, 0.45, servoMat));
 
-  // GRIPPER — parallel jaw with two-prong forks
+  // GRIPPER — two upright flat plates on a base, slide left/right
   const gripGroup = new THREE.Group();
   gripGroup.position.y = 0.35;
   wristBPivot.add(gripGroup);
 
-  gripGroup.add(box(0.5, 0.25, 0.65, fingerMat));
-  gripGroup.add(at(box(0.52, 0.04, 0.67, accentMat), 0, 0.12, 0));
+  // Base block (servo mount)
+  gripGroup.add(box(0.5, 0.3, 0.5, fingerMat));
+  gripGroup.add(at(box(0.52, 0.04, 0.52, accentMat), 0, 0.15, 0));
 
-  // Left jaw (two parallel prongs + back plate)
+  // Left plate — flat upright rectangle
   const lFinger = new THREE.Group();
-  lFinger.position.set(0, 0, 0.15);
+  lFinger.position.set(0.15, 0.55, 0);
   gripGroup.add(lFinger);
-  lFinger.add(at(box(0.1, 0.38, 0.06, fingerMat), 0, 0, 0.03));      // back plate
-  lFinger.add(at(box(0.08, 0.06, 0.95, fingerMat), 0, 0.15, 0.5));   // top prong
-  lFinger.add(at(box(0.08, 0.06, 0.95, fingerMat), 0, -0.15, 0.5));  // bottom prong
-  lFinger.add(at(box(0.08, 0.06, 0.04, accentMat), 0, 0.15, 0.96));  // top tip
-  lFinger.add(at(box(0.08, 0.06, 0.04, accentMat), 0, -0.15, 0.96)); // bottom tip
+  lFinger.add(box(0.06, 0.7, 0.4, fingerMat));
+  lFinger.add(at(box(0.06, 0.04, 0.42, accentMat), 0, 0.35, 0));
 
-  // Right jaw (two parallel prongs + back plate)
+  // Right plate — flat upright rectangle
   const rFinger = new THREE.Group();
-  rFinger.position.set(0, 0, -0.15);
+  rFinger.position.set(-0.15, 0.55, 0);
   gripGroup.add(rFinger);
-  rFinger.add(at(box(0.1, 0.38, 0.06, fingerMat), 0, 0, -0.03));      // back plate
-  rFinger.add(at(box(0.08, 0.06, 0.95, fingerMat), 0, 0.15, -0.5));   // top prong
-  rFinger.add(at(box(0.08, 0.06, 0.95, fingerMat), 0, -0.15, -0.5));  // bottom prong
-  rFinger.add(at(box(0.08, 0.06, 0.04, accentMat), 0, 0.15, -0.96));  // top tip
-  rFinger.add(at(box(0.08, 0.06, 0.04, accentMat), 0, -0.15, -0.96)); // bottom tip
+  rFinger.add(box(0.06, 0.7, 0.4, fingerMat));
+  rFinger.add(at(box(0.06, 0.04, 0.42, accentMat), 0, 0.35, 0));
 
   // ─── Animation ───────────────────────────────────────────────
   let baseAngle = 0;
@@ -1090,10 +1085,10 @@ log('Click "Connect Arduino" to begin.');
     // Wrist B — roll
     wristBPivot.rotation.y = (state.wristB - 90) * DEG;
 
-    // Gripper — parallel slide open/close
-    const gripOffset = (state.gripper - 90) / 90 * 0.4;
-    lFinger.position.z =  0.15 + gripOffset;
-    rFinger.position.z = -0.15 - gripOffset;
+    // Gripper — two plates slide apart (open) / together (close)
+    const gripOffset = (state.gripper - 90) / 90 * 0.35;
+    lFinger.position.x =  0.15 + gripOffset;
+    rFinger.position.x = -0.15 - gripOffset;
 
     controls.update();
     renderer.render(scene, camera);
