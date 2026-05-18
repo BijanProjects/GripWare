@@ -951,109 +951,197 @@ log('Click "Connect Arduino" to begin.');
   controls.maxDistance = 25;
   controls.update();
 
-  // Lights
-  scene.add(new THREE.AmbientLight(0x606060, 0.7));
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
-  dirLight.position.set(6, 12, 8);
-  scene.add(dirLight);
-  const rimLight = new THREE.DirectionalLight(0xb8ff3a, 0.15);
-  rimLight.position.set(-5, 3, -5);
+  // Lights — studio-style three-point
+  scene.add(new THREE.AmbientLight(0x404050, 0.6));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  keyLight.position.set(5, 14, 8);
+  keyLight.castShadow = true;
+  scene.add(keyLight);
+  const fillLight = new THREE.DirectionalLight(0x8899bb, 0.4);
+  fillLight.position.set(-6, 6, -4);
+  scene.add(fillLight);
+  const rimLight = new THREE.DirectionalLight(0xb8ff3a, 0.2);
+  rimLight.position.set(-3, 2, 6);
   scene.add(rimLight);
+  const bottomFill = new THREE.HemisphereLight(0x111118, 0x080808, 0.3);
+  scene.add(bottomFill);
 
-  // Ground grid
+  // Ground
   scene.add(new THREE.GridHelper(16, 32, 0x1f2a1f, 0x151a15));
+  const floorGeo = new THREE.PlaneGeometry(16, 16);
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x080c08, roughness: 0.95, metalness: 0.0 });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.01;
+  scene.add(floor);
 
-  // ─── Materials ───────────────────────────────────────────────
-  const bodyMat   = new THREE.MeshPhongMaterial({ color: 0xe8e0d0 });
-  const servoMat  = new THREE.MeshPhongMaterial({ color: 0x1a1a2a, shininess: 60 });
-  const accentMat = new THREE.MeshPhongMaterial({
-    color: 0xb8ff3a, emissive: 0x3a5f10, emissiveIntensity: 0.4
+  // ─── Materials (industrial) ──────────────────────────────────
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0xd8d8d8, roughness: 0.35, metalness: 0.15
   });
-  const jointMat  = new THREE.MeshPhongMaterial({ color: 0x333333, shininess: 80 });
-  const fingerMat = new THREE.MeshPhongMaterial({ color: 0xd0d0c0 });
+  const darkMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1a22, roughness: 0.5, metalness: 0.3
+  });
+  const jointMat = new THREE.MeshStandardMaterial({
+    color: 0x2a2a32, roughness: 0.4, metalness: 0.6
+  });
+  const accentMat = new THREE.MeshStandardMaterial({
+    color: 0xb8ff3a, emissive: 0x3a5f10, emissiveIntensity: 0.5,
+    roughness: 0.3, metalness: 0.2
+  });
+  const warnMat = new THREE.MeshStandardMaterial({
+    color: 0xff8c00, roughness: 0.4, metalness: 0.1
+  });
+  const metalMat = new THREE.MeshStandardMaterial({
+    color: 0x888892, roughness: 0.2, metalness: 0.8
+  });
+  const gripMat = new THREE.MeshStandardMaterial({
+    color: 0xc0c0c0, roughness: 0.3, metalness: 0.4
+  });
 
   function box(w, h, d, mat) {
     return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
   }
   function cyl(rT, rB, h, mat, s) {
-    return new THREE.Mesh(new THREE.CylinderGeometry(rT, rB, h, s || 32), mat);
+    return new THREE.Mesh(new THREE.CylinderGeometry(rT, rB, h, s || 48), mat);
+  }
+  function sph(r, mat) {
+    return new THREE.Mesh(new THREE.SphereGeometry(r, 32, 24), mat);
   }
   function at(mesh, x, y, z) { mesh.position.set(x, y, z); return mesh; }
 
   // ─── Build Arm Hierarchy ─────────────────────────────────────
 
+  // STATIC PEDESTAL (does not rotate)
+  const pedestal = new THREE.Group();
+  scene.add(pedestal);
+  pedestal.add(at(cyl(1.7, 1.85, 0.4, darkMat), 0, 0.2, 0));        // bottom ring
+  pedestal.add(at(cyl(1.72, 1.72, 0.04, warnMat), 0, 0.42, 0));      // warning stripe
+  pedestal.add(at(cyl(1.55, 1.7, 0.5, darkMat), 0, 0.67, 0));        // upper pedestal
+  // bolt details
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    pedestal.add(at(cyl(0.06, 0.06, 0.08, metalMat), Math.cos(a)*1.6, 0.05, Math.sin(a)*1.6));
+  }
+
   // BASE — rotates around Y (continuous rotation servo)
   const baseGroup = new THREE.Group();
-  scene.add(baseGroup);
+  baseGroup.position.y = 0.92;
+  pedestal.add(baseGroup);
 
-  baseGroup.add(at(cyl(1.3, 1.5, 1.2, bodyMat), 0, 0.6, 0));
-  baseGroup.add(at(cyl(1.35, 1.35, 0.06, accentMat), 0, 1.22, 0));
-  baseGroup.add(at(box(1.3, 0.7, 1.0, bodyMat), 0, 1.6, 0));
-  baseGroup.add(at(box(1.35, 0.55, 0.85, servoMat), 0, 2.1, 0));
+  baseGroup.add(at(cyl(1.45, 1.5, 0.3, jointMat), 0, 0.0, 0));      // rotating ring
+  baseGroup.add(at(cyl(1.42, 1.42, 0.04, accentMat), 0, 0.17, 0));   // accent ring
+  baseGroup.add(at(cyl(1.2, 1.35, 0.8, bodyMat), 0, 0.55, 0));       // turret body
+  baseGroup.add(at(cyl(1.22, 1.22, 0.03, darkMat), 0, 0.96, 0));     // top cap line
+  // shoulder housing
+  baseGroup.add(at(box(1.3, 0.8, 1.0, bodyMat), 0, 1.35, 0));
+  baseGroup.add(at(box(1.32, 0.04, 1.02, accentMat), 0, 1.12, 0));   // stripe
+  baseGroup.add(at(box(1.1, 0.35, 0.85, darkMat), 0, 1.8, 0));       // motor housing
 
   // SHOULDER PIVOT — Arm A rotation (pitch)
   const shoulderPivot = new THREE.Group();
-  shoulderPivot.position.y = 2.4;
+  shoulderPivot.position.y = 2.0;
   baseGroup.add(shoulderPivot);
 
-  const sJoint = cyl(0.22, 0.22, 1.1, jointMat, 16);
-  sJoint.rotation.x = Math.PI / 2;
-  shoulderPivot.add(sJoint);
+  // joint housing — bulky enclosed cylinders
+  const sJointL = cyl(0.38, 0.38, 0.2, jointMat);
+  sJointL.rotation.x = Math.PI / 2; sJointL.position.z = 0.55;
+  shoulderPivot.add(sJointL);
+  const sJointR = cyl(0.38, 0.38, 0.2, jointMat);
+  sJointR.rotation.x = Math.PI / 2; sJointR.position.z = -0.55;
+  shoulderPivot.add(sJointR);
+  // joint accent caps
+  const sCapL = cyl(0.25, 0.25, 0.06, accentMat);
+  sCapL.rotation.x = Math.PI / 2; sCapL.position.z = 0.66;
+  shoulderPivot.add(sCapL);
+  const sCapR = cyl(0.25, 0.25, 0.06, accentMat);
+  sCapR.rotation.x = Math.PI / 2; sCapR.position.z = -0.66;
+  shoulderPivot.add(sCapR);
 
-  // Lower arm
-  shoulderPivot.add(at(box(0.85, 4.0, 0.7, bodyMat), 0, 2.2, 0));
-  shoulderPivot.add(at(box(0.87, 0.05, 0.72, accentMat), 0, 3.6, 0));
+  // Lower arm — tapered profile
+  shoulderPivot.add(at(box(0.9, 0.8, 0.95, bodyMat), 0, 0.4, 0));    // shoulder block
+  shoulderPivot.add(at(box(0.75, 3.2, 0.7, bodyMat), 0, 2.2, 0));    // main link
+  shoulderPivot.add(at(box(0.77, 0.04, 0.72, accentMat), 0, 1.0, 0));// stripe low
+  shoulderPivot.add(at(box(0.77, 0.04, 0.72, accentMat), 0, 3.4, 0));// stripe high
+  shoulderPivot.add(at(box(0.65, 0.5, 0.6, darkMat), 0, 3.7, 0));    // elbow motor housing
+  // panel line detail
+  shoulderPivot.add(at(box(0.02, 2.8, 0.72, darkMat), 0.37, 2.2, 0));
+  shoulderPivot.add(at(box(0.02, 2.8, 0.72, darkMat), -0.37, 2.2, 0));
 
   // ELBOW PIVOT — Arm B rotation (pitch)
   const elbowPivot = new THREE.Group();
-  elbowPivot.position.y = 4.3;
+  elbowPivot.position.y = 4.0;
   shoulderPivot.add(elbowPivot);
 
-  elbowPivot.add(box(1.05, 0.65, 0.75, servoMat));
-  const eJoint = cyl(0.18, 0.18, 0.9, jointMat, 16);
-  eJoint.rotation.x = Math.PI / 2;
-  elbowPivot.add(eJoint);
+  // joint housing
+  const eJointL = cyl(0.32, 0.32, 0.18, jointMat);
+  eJointL.rotation.x = Math.PI / 2; eJointL.position.z = 0.45;
+  elbowPivot.add(eJointL);
+  const eJointR = cyl(0.32, 0.32, 0.18, jointMat);
+  eJointR.rotation.x = Math.PI / 2; eJointR.position.z = -0.45;
+  elbowPivot.add(eJointR);
+  const eCapL = cyl(0.2, 0.2, 0.05, accentMat);
+  eCapL.rotation.x = Math.PI / 2; eCapL.position.z = 0.55;
+  elbowPivot.add(eCapL);
+  const eCapR = cyl(0.2, 0.2, 0.05, accentMat);
+  eCapR.rotation.x = Math.PI / 2; eCapR.position.z = -0.55;
+  elbowPivot.add(eCapR);
 
-  // Upper arm
-  elbowPivot.add(at(box(0.7, 3.2, 0.6, bodyMat), 0, 1.9, 0));
-  elbowPivot.add(at(box(0.72, 0.05, 0.62, accentMat), 0, 2.9, 0));
+  // Upper arm — slightly narrower
+  elbowPivot.add(at(box(0.7, 0.6, 0.75, bodyMat), 0, 0.3, 0));      // elbow block
+  elbowPivot.add(at(box(0.6, 2.6, 0.55, bodyMat), 0, 1.9, 0));      // main link
+  elbowPivot.add(at(box(0.62, 0.04, 0.57, accentMat), 0, 0.8, 0));   // stripe low
+  elbowPivot.add(at(box(0.62, 0.04, 0.57, accentMat), 0, 2.8, 0));   // stripe high
+  // panel line detail
+  elbowPivot.add(at(box(0.02, 2.2, 0.57, darkMat), 0.3, 1.9, 0));
+  elbowPivot.add(at(box(0.02, 2.2, 0.57, darkMat), -0.3, 1.9, 0));
 
   // WRIST A PIVOT — pitch (up/down tilt)
   const wristAPivot = new THREE.Group();
-  wristAPivot.position.y = 3.5;
+  wristAPivot.position.y = 3.3;
   elbowPivot.add(wristAPivot);
 
-  wristAPivot.add(box(0.55, 0.45, 0.5, servoMat));
+  wristAPivot.add(at(box(0.5, 0.45, 0.5, darkMat), 0, 0, 0));
+  const wAJoint = cyl(0.2, 0.2, 0.6, jointMat);
+  wAJoint.rotation.x = Math.PI / 2;
+  wristAPivot.add(wAJoint);
+  const wACap = cyl(0.13, 0.13, 0.04, accentMat);
+  wACap.rotation.x = Math.PI / 2; wACap.position.z = 0.32;
+  wristAPivot.add(wACap);
 
   // WRIST B PIVOT — roll
   const wristBPivot = new THREE.Group();
-  wristBPivot.position.y = 0.45;
+  wristBPivot.position.y = 0.4;
   wristAPivot.add(wristBPivot);
 
-  wristBPivot.add(box(0.45, 0.35, 0.45, servoMat));
+  wristBPivot.add(cyl(0.22, 0.22, 0.35, jointMat));                  // roll cylinder
+  wristBPivot.add(at(cyl(0.24, 0.24, 0.04, accentMat), 0, 0.17, 0)); // accent ring
 
-  // GRIPPER — two upright flat plates on a base, slide left/right
+  // GRIPPER — two upright plates on a base, slide left/right
   const gripGroup = new THREE.Group();
-  gripGroup.position.y = 0.35;
+  gripGroup.position.y = 0.3;
   wristBPivot.add(gripGroup);
 
-  // Base block (servo mount)
-  gripGroup.add(box(0.5, 0.3, 0.5, fingerMat));
-  gripGroup.add(at(box(0.52, 0.04, 0.52, accentMat), 0, 0.15, 0));
+  // Gripper mount
+  gripGroup.add(box(0.55, 0.22, 0.55, darkMat));
+  gripGroup.add(at(cyl(0.15, 0.15, 0.06, metalMat), 0, 0.12, 0));    // center bolt
+  gripGroup.add(at(box(0.57, 0.03, 0.57, accentMat), 0, 0.11, 0));   // accent line
 
-  // Left plate — flat upright rectangle
+  // Left plate
   const lFinger = new THREE.Group();
-  lFinger.position.set(0.15, 0.55, 0);
+  lFinger.position.set(0.15, 0.5, 0);
   gripGroup.add(lFinger);
-  lFinger.add(box(0.06, 0.7, 0.4, fingerMat));
-  lFinger.add(at(box(0.06, 0.04, 0.42, accentMat), 0, 0.35, 0));
+  lFinger.add(box(0.06, 0.65, 0.38, gripMat));
+  lFinger.add(at(box(0.06, 0.04, 0.4, accentMat), 0, 0.32, 0));     // tip stripe
+  lFinger.add(at(box(0.04, 0.55, 0.02, darkMat), 0, 0.0, 0.19));    // inner grip pad
 
-  // Right plate — flat upright rectangle
+  // Right plate
   const rFinger = new THREE.Group();
-  rFinger.position.set(-0.15, 0.55, 0);
+  rFinger.position.set(-0.15, 0.5, 0);
   gripGroup.add(rFinger);
-  rFinger.add(box(0.06, 0.7, 0.4, fingerMat));
-  rFinger.add(at(box(0.06, 0.04, 0.42, accentMat), 0, 0.35, 0));
+  rFinger.add(box(0.06, 0.65, 0.38, gripMat));
+  rFinger.add(at(box(0.06, 0.04, 0.4, accentMat), 0, 0.32, 0));     // tip stripe
+  rFinger.add(at(box(0.04, 0.55, 0.02, darkMat), 0, 0.0, -0.19));   // inner grip pad
 
   // ─── Animation ───────────────────────────────────────────────
   let baseAngle = 0;
