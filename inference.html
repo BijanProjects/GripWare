@@ -458,6 +458,59 @@
     text-align: center;
     letter-spacing: 0.1em;
   }
+
+  .viewer-wrap {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    margin-bottom: 24px;
+    height: 420px;
+    overflow: hidden;
+  }
+
+  .viewer-wrap::before {
+    content: '';
+    position: absolute;
+    top: -1px; left: -1px;
+    width: 12px; height: 12px;
+    border-top: 2px solid var(--accent);
+    border-left: 2px solid var(--accent);
+    z-index: 2;
+  }
+
+  .viewer-wrap::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; right: -1px;
+    width: 12px; height: 12px;
+    border-bottom: 2px solid var(--accent);
+    border-right: 2px solid var(--accent);
+    z-index: 2;
+  }
+
+  .viewer-label {
+    position: absolute;
+    top: 12px; left: 16px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    color: var(--ink-dim);
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  .viewer-hint {
+    position: absolute;
+    bottom: 12px; right: 16px;
+    font-size: 0.6rem;
+    color: var(--ink-dim);
+    z-index: 2;
+    pointer-events: none;
+    letter-spacing: 0.1em;
+  }
+
+  #viewer3d { width: 100%; height: 100%; }
+  #viewer3d canvas { display: block; }
 </style>
 </head>
 <body>
@@ -477,6 +530,12 @@
   </header>
 
   <div class="stop-all" id="stopAllBtn">EMERGENCY STOP</div>
+
+  <div class="viewer-wrap">
+    <div class="viewer-label">3D Preview</div>
+    <div class="viewer-hint">Drag to orbit · Scroll to zoom</div>
+    <div id="viewer3d"></div>
+  </div>
 
   <div class="grid">
     <div class="panel">
@@ -523,6 +582,8 @@
   <footer>Web Serial API · Chrome / Edge only · Plug Arduino via USB before connecting</footer>
 
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
 // ─── Servo definitions ────────────────────────────────────────────────────────
 const SERVOS = [
@@ -856,6 +917,194 @@ document.getElementById('stopAllBtn').onclick = stopAll;
 
 log('Interface loaded. ACK handshake enabled — one packet in flight at a time.');
 log('Click "Connect Arduino" to begin.');
+
+// ─── 3D Visualization ────────────────────────────────────────────────────────
+(function init3D() {
+  const container = document.getElementById('viewer3d');
+  if (!container || typeof THREE === 'undefined') return;
+
+  const DEG = Math.PI / 180;
+
+  // Scene
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0e0a);
+
+  // Camera
+  const camera = new THREE.PerspectiveCamera(
+    45, container.clientWidth / container.clientHeight, 0.1, 100
+  );
+  camera.position.set(12, 9, 12);
+
+  // Renderer
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  container.appendChild(renderer.domElement);
+
+  // Orbit controls
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 5, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 5;
+  controls.maxDistance = 25;
+  controls.update();
+
+  // Lights
+  scene.add(new THREE.AmbientLight(0x606060, 0.7));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+  dirLight.position.set(6, 12, 8);
+  scene.add(dirLight);
+  const rimLight = new THREE.DirectionalLight(0xb8ff3a, 0.15);
+  rimLight.position.set(-5, 3, -5);
+  scene.add(rimLight);
+
+  // Ground grid
+  scene.add(new THREE.GridHelper(16, 32, 0x1f2a1f, 0x151a15));
+
+  // ─── Materials ───────────────────────────────────────────────
+  const bodyMat   = new THREE.MeshPhongMaterial({ color: 0xe8e0d0 });
+  const servoMat  = new THREE.MeshPhongMaterial({ color: 0x1a1a2a, shininess: 60 });
+  const accentMat = new THREE.MeshPhongMaterial({
+    color: 0xb8ff3a, emissive: 0x3a5f10, emissiveIntensity: 0.4
+  });
+  const jointMat  = new THREE.MeshPhongMaterial({ color: 0x333333, shininess: 80 });
+  const fingerMat = new THREE.MeshPhongMaterial({ color: 0xd0d0c0 });
+
+  function box(w, h, d, mat) {
+    return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  }
+  function cyl(rT, rB, h, mat, s) {
+    return new THREE.Mesh(new THREE.CylinderGeometry(rT, rB, h, s || 32), mat);
+  }
+  function at(mesh, x, y, z) { mesh.position.set(x, y, z); return mesh; }
+
+  // ─── Build Arm Hierarchy ─────────────────────────────────────
+
+  // BASE — rotates around Y (continuous rotation servo)
+  const baseGroup = new THREE.Group();
+  scene.add(baseGroup);
+
+  baseGroup.add(at(cyl(1.3, 1.5, 1.2, bodyMat), 0, 0.6, 0));
+  baseGroup.add(at(cyl(1.35, 1.35, 0.06, accentMat), 0, 1.22, 0));
+  baseGroup.add(at(box(1.3, 0.7, 1.0, bodyMat), 0, 1.6, 0));
+  baseGroup.add(at(box(1.35, 0.55, 0.85, servoMat), 0, 2.1, 0));
+
+  // SHOULDER PIVOT — Arm A rotation (pitch)
+  const shoulderPivot = new THREE.Group();
+  shoulderPivot.position.y = 2.4;
+  baseGroup.add(shoulderPivot);
+
+  const sJoint = cyl(0.22, 0.22, 1.1, jointMat, 16);
+  sJoint.rotation.x = Math.PI / 2;
+  shoulderPivot.add(sJoint);
+
+  // Lower arm
+  shoulderPivot.add(at(box(0.85, 4.0, 0.7, bodyMat), 0, 2.2, 0));
+  shoulderPivot.add(at(box(0.87, 0.05, 0.72, accentMat), 0, 3.6, 0));
+
+  // ELBOW PIVOT — Arm B rotation (pitch)
+  const elbowPivot = new THREE.Group();
+  elbowPivot.position.y = 4.3;
+  shoulderPivot.add(elbowPivot);
+
+  elbowPivot.add(box(1.05, 0.65, 0.75, servoMat));
+  const eJoint = cyl(0.18, 0.18, 0.9, jointMat, 16);
+  eJoint.rotation.x = Math.PI / 2;
+  elbowPivot.add(eJoint);
+
+  // Upper arm
+  elbowPivot.add(at(box(0.7, 3.2, 0.6, bodyMat), 0, 1.9, 0));
+  elbowPivot.add(at(box(0.72, 0.05, 0.62, accentMat), 0, 2.9, 0));
+
+  // WRIST A PIVOT — pitch (up/down tilt)
+  const wristAPivot = new THREE.Group();
+  wristAPivot.position.y = 3.5;
+  elbowPivot.add(wristAPivot);
+
+  wristAPivot.add(box(0.55, 0.45, 0.5, servoMat));
+
+  // WRIST B PIVOT — roll
+  const wristBPivot = new THREE.Group();
+  wristBPivot.position.y = 0.45;
+  wristAPivot.add(wristBPivot);
+
+  wristBPivot.add(box(0.45, 0.35, 0.45, servoMat));
+
+  // GRIPPER
+  const gripGroup = new THREE.Group();
+  gripGroup.position.y = 0.35;
+  wristBPivot.add(gripGroup);
+
+  gripGroup.add(box(0.5, 0.25, 0.65, fingerMat));
+  gripGroup.add(at(box(0.52, 0.04, 0.67, accentMat), 0, 0.12, 0));
+
+  // Left finger
+  const lFingerPivot = new THREE.Group();
+  lFingerPivot.position.set(0, 0.1, 0.32);
+  gripGroup.add(lFingerPivot);
+  lFingerPivot.add(at(box(0.1, 0.07, 0.85, fingerMat), 0, 0, 0.42));
+  lFingerPivot.add(at(box(0.1, 0.12, 0.07, accentMat), 0, 0, 0.82));
+
+  // Right finger
+  const rFingerPivot = new THREE.Group();
+  rFingerPivot.position.set(0, 0.1, -0.32);
+  gripGroup.add(rFingerPivot);
+  rFingerPivot.add(at(box(0.1, 0.07, 0.85, fingerMat), 0, 0, -0.42));
+  rFingerPivot.add(at(box(0.1, 0.12, 0.07, accentMat), 0, 0, -0.82));
+
+  // ─── Animation ───────────────────────────────────────────────
+  let baseAngle = 0;
+  const clock = new THREE.Clock();
+
+  // Rest-pose offsets so arm looks natural at servo home (90)
+  const REST_SHOULDER = -20 * DEG;
+  const REST_ELBOW    =  40 * DEG;
+  const REST_WRIST_A  = -10 * DEG;
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+
+    // Base (CR) — accumulate rotation from speed
+    const baseSpeed = (state.root - 90) / 90;
+    baseAngle += baseSpeed * 1.5 * dt;
+    baseGroup.rotation.y = baseAngle;
+
+    // Arm A — shoulder pitch
+    shoulderPivot.rotation.z = REST_SHOULDER + (state.armA - 90) * DEG;
+
+    // Arm B — elbow pitch
+    elbowPivot.rotation.z = REST_ELBOW - (state.armB - 90) * DEG;
+
+    // Wrist A — pitch (up/down tilt)
+    wristAPivot.rotation.z = REST_WRIST_A + (state.wristA - 90) * DEG;
+
+    // Wrist B — roll
+    wristBPivot.rotation.y = (state.wristB - 90) * DEG;
+
+    // Gripper — open/close
+    const grip = (state.gripper - 90) * DEG * 0.35;
+    lFingerPivot.rotation.x = -grip;
+    rFingerPivot.rotation.x = grip;
+
+    controls.update();
+    renderer.render(scene, camera);
+  }
+
+  animate();
+
+  // Resize handler
+  window.addEventListener('resize', () => {
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (w === 0 || h === 0) return;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  });
+})();
 </script>
 </body>
 </html>
