@@ -644,7 +644,7 @@
 <script>
 // ─── Servo definitions ────────────────────────────────────────────────────────
 const SERVOS = [
-  { key: 'root',    label: 'Base (Root)', pin: 'D3',            type: 'cr',  home: 90 },
+  { key: 'root',    label: 'Base (Root)', pin: 'D3',            type: 'pos', min: 0, max: 180, home: 90 },
   { key: 'armA',    label: 'Arm A1/A2',   pin: 'D4+D5 mirror', type: 'pos', min: 0, max: 180, home: 90 },
   { key: 'armB',    label: 'Arm B',       pin: 'D6',            type: 'pos', min: 0, max: 180, home: 90 },
   { key: 'wristA',  label: 'Wrist A',     pin: 'D9',            type: 'pos', min: 0, max: 180, home: 90 },
@@ -839,7 +839,7 @@ function stopAll() {
   sendBusy    = false;
   sendPending = false;
   flushPacket();
-  log('STOP ALL — base stopped, all position servos homed.', 'l-err');
+  log('STOP ALL — all servos homed.', 'l-err');
 }
 
 // ─── Jog button events ────────────────────────────────────────────────────────
@@ -1252,7 +1252,7 @@ log('Click "Connect Arduino" to begin.');
   });
   tagMeshes(gripGroup, 'gripper');
 
-  jointMap['root']    = { pivot: baseGroup,     focusGroup: baseGroup,     type: 'cr' };
+  jointMap['root']    = { pivot: baseGroup,     focusGroup: baseGroup,     type: 'pos' };
   jointMap['armA']    = { pivot: shoulderPivot,  focusGroup: shoulderPivot, type: 'pos', min: 0, max: 180 };
   jointMap['armB']    = { pivot: elbowPivot,     focusGroup: elbowPivot,    type: 'pos', min: 0, max: 180 };
   jointMap['wristA']  = { pivot: wristAPivot,    focusGroup: wristAPivot,   type: 'pos', min: 0, max: 180 };
@@ -1286,7 +1286,6 @@ log('Click "Connect Arduino" to begin.');
   homeBtn.addEventListener('click', goHome);
 
   // ─── Animation ───────────────────────────────────────────────
-  let baseAngle = 0;
   const clock = new THREE.Clock();
 
   // Rest-pose offsets so arm looks natural at servo home (90)
@@ -1298,10 +1297,8 @@ log('Click "Connect Arduino" to begin.');
     requestAnimationFrame(animate);
     const dt = clock.getDelta();
 
-    // Base (CR) — accumulate rotation from speed
-    const baseSpeed = (state.root - 90) / 90;
-    baseAngle += baseSpeed * 1.5 * dt;
-    baseGroup.rotation.y = baseAngle;
+    // Base — direct angle (position servo)
+    baseGroup.rotation.y = (state.root - 90) * DEG;
 
     // Arm A — shoulder pitch
     shoulderPivot.rotation.z = REST_SHOULDER + (state.armA - 90) * DEG;
