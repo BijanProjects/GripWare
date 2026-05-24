@@ -17,7 +17,7 @@
 
 | Task | Description (deliverable + acceptance test) | Due |
 |---|---|---|
-| **M01 — Hello Python serial** | Python script opens the Arduino COM port at 9600 baud and sends one home packet (`"90 90 90 90 90 90\n"`). **Accept** when the arm visibly moves to or holds the home pose with no errors. | **Tue 5/26** |
+| **M01 — Hello Python serial** | Python script opens the Arduino COM port and sends a per-joint sweep around home. **Accept** when every joint visibly moves and returns to home with no serial errors. ✅ Done 2026-05-24. | **Tue 5/26** |
 | **M02 — Baud bump to 115200** | Update firmware (`Serial.begin(115200)`), browser dashboard, and Python to 115200 baud. **Accept** when both Python and the existing browser dashboard control the arm at the new baud with no regressions. | Tue 5/26 |
 | **M03 — Heartbeat watchdog** | Python sends a keepalive packet every 100 ms; firmware auto-commands `root=90` and holds position servos if no packet arrives for 500 ms. **Accept** when yanking the USB cable mid-rotation stops the base within 500 ms. **Mandatory before any closed-loop work.** | **Fri 5/29** |
 | M04 — Joint API + named poses | `arm.py` exposes `set_joints()`, `home()`, `gripper(open/close)`. `poses.py` defines HOME, READY, HOVER. **Accept** when `arm.move_to(HOVER)` reaches the same pose from any starting state, 10/10 times. | Tue 6/2 |

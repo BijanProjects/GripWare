@@ -93,7 +93,7 @@ External 5V PSU
 
 ## Serial Protocol
 
-Communication runs at **9600 baud**. The host sends 6 space-separated integers (0-180) followed by a newline:
+Communication runs at **115200 baud**. The host sends 6 space-separated integers (0-180) followed by a newline:
 
 ```
 root armA armB wristA wristB gripper\n

@@ -124,7 +124,7 @@ void writeServos() {
 // ---------------------------------------------------------------------
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   for (uint8_t i = 0; i < 7; i++) pinMode(SERVO_PINS[i], OUTPUT);
 

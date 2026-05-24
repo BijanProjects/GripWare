@@ -22,7 +22,7 @@ import time
 import serial
 from serial.tools import list_ports
 
-BAUD = 9600  # bumped to 115200 in M02
+BAUD = 115200
 HOME = (90, 90, 90, 90, 90, 77)
 JOINT_NAMES = ("root/base", "shoulder", "elbow", "wrist_a", "wrist_b", "gripper")
 SWEEP_OFFSETS = (+10, 0, -10, 0)  # small symmetric excursion, return to home

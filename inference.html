@@ -616,7 +616,7 @@
 
         <div class="panel">
           <div class="panel-title">Connection</div>
-          <div class="stat-row"><span class="k">Baud</span><span class="v">9600</span></div>
+          <div class="stat-row"><span class="k">Baud</span><span class="v">115200</span></div>
           <div class="stat-row"><span class="k">Protocol</span><span class="v">ACK handshake</span></div>
           <div class="stat-row"><span class="k">CR Servos</span><span class="v">Base only</span></div>
           <div class="stat-row"><span class="k">POS Servos</span><span class="v">Arm A, Arm B, Wrist, Grip</span></div>
@@ -909,12 +909,12 @@ if (!('serial' in navigator)) {
 document.getElementById('connectBtn').onclick = async () => {
   try {
     port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 9600 });
+    await port.open({ baudRate: 115200 });
     writer = port.writable.getWriter();
     setStatus('Connected', 'ok');
     document.getElementById('connectBtn').disabled    = true;
     document.getElementById('disconnectBtn').disabled = false;
-    log('Port opened at 9600 baud. Waiting 2s for Arduino reset...');
+    log('Port opened at 115200 baud. Waiting 2s for Arduino reset...');
     readLoop();
     setTimeout(() => {
       if (sendBusy) { sendBusy = false; }
