@@ -1,4 +1,4 @@
-"""Live joint-angle detector using AprilTags.
+""""Live joint-angle detector using AprilTags.
 
 Setup
 -----
@@ -26,21 +26,28 @@ Setup
 Run:    python AprilTag/joint_angle.py
 Quit:   press Q (or Esc) in the video window.
 
-How the angle is computed
--------------------------
-For a top-down camera with both tags lying flat, joint rotation about the
-camera's optical axis appears as a pure in-plane rotation in the image.
-Each tag detection gives four image-space corners ordered counter-clockwise
-starting at the tag's bottom-left. The vector from corner[0] -> corner[1]
-is the tag's +x edge; its image-space angle is the tag's orientation.
-The reported joint angle is (joint_angle - reference_angle), wrapped to
-[-180, 180].
+What gets reported
+------------------
+For each frame in which both the reference and joint tags are detected,
+the script computes the joint tag's full 6DOF pose expressed in the
+reference tag's frame, then reports:
 
-This 2D method needs no intrinsic calibration. If the joint later needs to
-tilt out of the image plane, calibrate the camera and switch to a solvePnP-
-based 3D pose estimate.
+    Rx   rotation about the reference X axis (deg)
+    Ry   rotation about the reference Y axis (deg)
+    Rz   rotation about the reference Z axis (deg, the primary joint rot)
+    dist 3D euclidean distance between the two tag centers (mm)
 
-Overlay legend
+Euler angles use XYZ-intrinsic convention. With a top-down camera and
+both tags lying flat, Rz is the dominant value; Rx and Ry stay near zero
+unless the joint tilts out of the reference's plane.
+
+The angle math relies on pose estimation, which needs a camera matrix
+and the tag's physical size. The matrix here is synthesized from frame
+dimensions (~60 deg horizontal FOV), so the readings are useful but not
+metrically precise -- Rx/Ry and dist in particular will drift a bit.
+Run a checkerboard calibration if you need sub-degree or mm accuracy.
+
+"Overlay legend
 --------------
 On every detected tag, the script draws the tag's local coordinate frame:
     red   = +X axis (the direction whose image angle becomes the joint angle)
@@ -121,19 +128,37 @@ def draw_tag_cube(frame, det, K, dist, size, color):
         cv2.line(frame, tuple(p[i]), tuple(p[j]), color, 2)
 
 
-def tag_image_angle_deg(corners) -> float:
-    """Image-space angle of the tag's bottom edge (corner[0] -> corner[1]).
+def relative_pose(ref_det, joint_det):
+    """Joint pose expressed in the reference tag's frame.
 
-    Image y grows downward, so we negate dy to get a math-convention angle
-    where counter-clockwise is positive.
+    Returns (rx_deg, ry_deg, rz_deg, dist_mm) where the Euler angles use
+    XYZ intrinsic convention (rotate about X, then the new Y, then the new
+    Z) and dist_mm is the 3D euclidean distance between tag centers.
+
+    For a top-down camera with both tags lying flat, Rz is the dominant
+    "joint rotation" and Rx/Ry should hover near zero. Rx/Ry growing means
+    the joint tag is tilting out of the reference's plane.
     """
-    x0, y0 = corners[0]
-    x1, y1 = corners[1]
-    return math.degrees(math.atan2(-(y1 - y0), x1 - x0))
+    R_ref = ref_det.pose_R
+    t_ref = ref_det.pose_t.reshape(3)
+    R_joint = joint_det.pose_R
+    t_joint = joint_det.pose_t.reshape(3)
 
+    R_rel = R_ref.T @ R_joint
+    t_rel = R_ref.T @ (t_joint - t_ref)
 
-def wrap_180(deg: float) -> float:
-    return ((deg + 180.0) % 360.0) - 180.0
+    sy = math.sqrt(R_rel[0, 0] ** 2 + R_rel[1, 0] ** 2)
+    if sy > 1e-6:
+        rx = math.atan2(R_rel[2, 1], R_rel[2, 2])
+        ry = math.atan2(-R_rel[2, 0], sy)
+        rz = math.atan2(R_rel[1, 0], R_rel[0, 0])
+    else:
+        rx = math.atan2(-R_rel[1, 2], R_rel[1, 1])
+        ry = math.atan2(-R_rel[2, 0], sy)
+        rz = 0.0
+
+    return (math.degrees(rx), math.degrees(ry), math.degrees(rz),
+            float(np.linalg.norm(t_rel)))
 
 
 def main() -> None:
@@ -207,14 +232,17 @@ def main() -> None:
                 draw_tag_cube(frame, d, K, dist, tag_size_mm, color)
 
         if ref_det is not None and joint_det is not None:
-            a_ref = tag_image_angle_deg(ref_det.corners)
-            a_joint = tag_image_angle_deg(joint_det.corners)
-            delta = wrap_180(a_joint - a_ref)
-            status = f"joint: {delta:+7.2f} deg"
-
+            rx, ry, rz, dist_mm = relative_pose(ref_det, joint_det)
+            status_lines = [
+                f"Rx: {rx:+7.2f} deg",
+                f"Ry: {ry:+7.2f} deg",
+                f"Rz: {rz:+7.2f} deg",
+                f"dist: {dist_mm:7.1f} mm",
+            ]
             now = time.time()
             if now - last_print > 0.1:
-                print(f"\r{status}     ", end="", flush=True)
+                print(f"\rRx:{rx:+7.2f} Ry:{ry:+7.2f} Rz:{rz:+7.2f}  "
+                      f"d:{dist_mm:7.1f}mm  ", end="", flush=True)
                 last_print = now
         else:
             missing = []
@@ -222,10 +250,11 @@ def main() -> None:
                 missing.append(f"ref({ref_id})")
             if joint_det is None:
                 missing.append(f"joint({joint_id})")
-            status = "missing: " + ", ".join(missing)
+            status_lines = ["missing: " + ", ".join(missing)]
 
-        cv2.putText(frame, status, (12, 34),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+        for i, line in enumerate(status_lines):
+            cv2.putText(frame, line, (12, 34 + i * 32),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
         fps_frames += 1
         if fps_frames >= 30:
@@ -234,7 +263,7 @@ def main() -> None:
             fps_frames = 0
             fps_t0 = now
         if show_fps:
-            cv2.putText(frame, f"{fps:5.1f} fps", (12, 66),
+            cv2.putText(frame, f"{fps:5.1f} fps", (actual_w - 110, 28),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
 
         cv2.imshow("AprilTag joint angle", frame)
