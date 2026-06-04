@@ -538,6 +538,157 @@
   #viewer3d { width: 100%; height: 100%; }
   #viewer3d canvas { display: block; }
 
+  /* ─── Sequence / Teach-and-Playback panel ─── */
+  .seq-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .seq-controls button { flex: 1; padding: 10px 6px; font-size: 0.68rem; }
+
+  .seq-controls .rec-btn {
+    background: rgba(255,90,58,0.12);
+    color: var(--danger);
+    border-color: var(--danger);
+    font-weight: 700;
+  }
+  .seq-controls .rec-btn:hover:not(:disabled) {
+    background: var(--danger);
+    color: #fff;
+    border-color: var(--danger);
+  }
+
+  .seq-controls .exec-btn {
+    background: rgba(184,255,58,0.10);
+    color: var(--accent);
+    border-color: var(--accent);
+    font-weight: 700;
+  }
+  .seq-controls .exec-btn:hover:not(:disabled) {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  .seq-controls .exec-btn.running {
+    background: var(--warn);
+    color: var(--bg);
+    border-color: var(--warn);
+    animation: pulse-run 1s infinite;
+  }
+
+  @keyframes pulse-run {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  .waypoint-list {
+    max-height: 280px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .waypoint-list::-webkit-scrollbar { width: 5px; }
+  .waypoint-list::-webkit-scrollbar-track { background: var(--panel-2); }
+  .waypoint-list::-webkit-scrollbar-thumb { background: var(--line); }
+
+  .wp-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    font-size: 0.7rem;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .wp-item:hover { border-color: var(--accent-dim); }
+  .wp-item.active {
+    border-color: var(--accent);
+    background: rgba(184,255,58,0.06);
+  }
+
+  .wp-idx {
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    color: var(--accent);
+    min-width: 22px;
+    text-align: center;
+  }
+
+  .wp-vals {
+    flex: 1;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .wp-actions {
+    display: flex;
+    gap: 4px;
+  }
+
+  .wp-actions button {
+    padding: 3px 6px;
+    font-size: 0.55rem;
+    letter-spacing: 0.05em;
+    border-color: var(--line);
+    color: var(--ink-dim);
+  }
+
+  .wp-actions button:hover:not(:disabled) {
+    border-color: var(--ink);
+    color: var(--ink);
+    background: transparent;
+  }
+
+  .wp-actions .wp-del:hover:not(:disabled) {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
+  .wp-empty {
+    text-align: center;
+    padding: 20px;
+    font-size: 0.7rem;
+    color: var(--ink-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .seq-speed-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line);
+  }
+
+  .seq-speed-row .speed-label {
+    font-size: 0.6rem;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+
+  .seq-speed-row input[type="range"] { flex: 1; height: 3px; }
+
+  .seq-speed-row .speed-val {
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    font-size: 0.75rem;
+    color: var(--accent);
+    min-width: 40px;
+    text-align: right;
+  }
+
   .home-view-btn {
     display: none;
     position: absolute;
@@ -611,6 +762,29 @@
           <div class="actions">
             <button id="sendBtn">Send Now</button>
             <button id="homeBtn">Home / Stop All</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">
+            <span>Sequence</span>
+            <span id="wpCount">0 waypoints</span>
+          </div>
+
+          <div class="seq-controls">
+            <button class="rec-btn" id="recBtn">&#9632; Mark Stop</button>
+            <button class="exec-btn" id="execBtn" disabled>&#9654; Execute</button>
+            <button id="clearSeqBtn" disabled>Clear</button>
+          </div>
+
+          <div class="waypoint-list" id="wpList">
+            <div class="wp-empty">Jog the arm &amp; gripper, then press Mark Stop.</div>
+          </div>
+
+          <div class="seq-speed-row">
+            <span class="speed-label">Dwell</span>
+            <input type="range" min="500" max="8000" value="2000" step="100" id="seqDwell">
+            <span class="speed-val" id="seqDwellVal">2.0s</span>
           </div>
         </div>
 
@@ -974,6 +1148,212 @@ document.getElementById('stopAllBtn').onclick = stopAll;
 
 log('Interface loaded. ACK handshake enabled — one packet in flight at a time.');
 log('Click "Connect Arduino" to begin.');
+
+// ─── Teach-and-Playback (Sequence) ───────────────────────────────────────────
+// Arm joints = everything except gripper.  Gripper always executes AFTER arm arrives.
+const ARM_KEYS = SERVOS.filter(s => s.key !== 'gripper').map(s => s.key);
+
+const waypoints = [];
+const SEQ_FRAME_MS = 55;
+const SEQ_ARM_MS_PER_DEG = 28;
+const SEQ_GRIP_MS_PER_DEG = 18;
+const SEQ_MIN_ARM_MS = 700;
+const SEQ_MIN_GRIP_MS = 450;
+let seqRunning = false;
+let seqAbort   = false;
+
+const wpListEl    = document.getElementById('wpList');
+const wpCountEl   = document.getElementById('wpCount');
+const recBtn      = document.getElementById('recBtn');
+const execBtn     = document.getElementById('execBtn');
+const clearSeqBtn = document.getElementById('clearSeqBtn');
+const seqDwellEl  = document.getElementById('seqDwell');
+const seqDwellVal = document.getElementById('seqDwellVal');
+
+seqDwellEl.addEventListener('input', () => {
+  seqDwellVal.textContent = (parseInt(seqDwellEl.value, 10) / 1000).toFixed(1) + 's';
+});
+
+function setJointValues(keys, values, shouldSend = true) {
+  keys.forEach(k => {
+    state[k] = values[k];
+    const slider = document.querySelector(`input[data-key="${k}"]`);
+    if (slider) slider.value = values[k];
+    const valEl = document.querySelector(`[data-val="${k}"]`);
+    if (valEl) valEl.textContent = values[k];
+  });
+  if (shouldSend) sendPacket();
+}
+
+function applyJoints(keys, wp) {
+  setJointValues(keys, wp);
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5
+    ? 4 * t * t * t
+    : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+async function moveJointsSmooth(keys, wp, durationMs) {
+  const start = {};
+  let maxDelta = 0;
+  keys.forEach(k => {
+    start[k] = state[k];
+    maxDelta = Math.max(maxDelta, Math.abs(wp[k] - start[k]));
+  });
+
+  if (maxDelta === 0) return;
+
+  const steps = Math.max(1, Math.ceil(durationMs / SEQ_FRAME_MS));
+  for (let step = 1; step <= steps; step++) {
+    if (seqAbort) break;
+    const t = easeInOutCubic(step / steps);
+    const next = {};
+    keys.forEach(k => {
+      next[k] = Math.round(start[k] + (wp[k] - start[k]) * t);
+    });
+    setJointValues(keys, next);
+    await sleep(SEQ_FRAME_MS);
+  }
+
+  if (!seqAbort) setJointValues(keys, wp);
+}
+
+function renderWaypoints() {
+  wpCountEl.textContent = waypoints.length + ' stop' + (waypoints.length !== 1 ? 's' : '');
+  execBtn.disabled     = waypoints.length === 0 || seqRunning;
+  clearSeqBtn.disabled = waypoints.length === 0 || seqRunning;
+
+  if (waypoints.length === 0) {
+    wpListEl.innerHTML = '<div class="wp-empty">Jog the arm &amp; gripper, then press Mark Stop.</div>';
+    return;
+  }
+
+  wpListEl.innerHTML = waypoints.map((wp, i) => {
+    const armVals = ARM_KEYS.map(k => String(wp[k]).padStart(3, ' ')).join(' ');
+    const grip = wp.gripper;
+    return `<div class="wp-item" data-idx="${i}">
+      <span class="wp-idx">${i + 1}</span>
+      <span class="wp-vals">${armVals} <span style="color:var(--warn)">G${grip}</span></span>
+      <div class="wp-actions">
+        <button class="wp-goto" data-idx="${i}" title="Go to this pose">GO</button>
+        <button class="wp-del" data-idx="${i}" title="Delete">DEL</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+recBtn.addEventListener('click', () => {
+  if (seqRunning) return;
+  const pose = {};
+  SERVOS.forEach(s => { pose[s.key] = state[s.key]; });
+  waypoints.push(pose);
+  renderWaypoints();
+  log('Stop #' + waypoints.length + ' marked: arm=[' + ARM_KEYS.map(k => pose[k]).join(' ') + '] grip=' + pose.gripper, 'l-tx');
+  wpListEl.scrollTop = wpListEl.scrollHeight;
+});
+
+wpListEl.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn || seqRunning) return;
+  const idx = parseInt(btn.dataset.idx, 10);
+
+  if (btn.classList.contains('wp-del')) {
+    waypoints.splice(idx, 1);
+    renderWaypoints();
+    log('Stop #' + (idx + 1) + ' deleted.', 'l-err');
+  } else if (btn.classList.contains('wp-goto')) {
+    const wp = waypoints[idx];
+    if (!wp) return;
+    applyJoints(SERVOS.map(s => s.key), wp);
+    log('Go to stop #' + (idx + 1), 'l-tx');
+    wpListEl.querySelectorAll('.wp-item').forEach(el => el.classList.remove('active'));
+    const item = wpListEl.querySelector(`.wp-item[data-idx="${idx}"]`);
+    if (item) item.classList.add('active');
+  }
+});
+
+clearSeqBtn.addEventListener('click', () => {
+  if (seqRunning) return;
+  waypoints.length = 0;
+  renderWaypoints();
+  log('Sequence cleared.', 'l-err');
+});
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function executeSequence() {
+  if (waypoints.length === 0 || seqRunning) return;
+  seqRunning = true;
+  seqAbort   = false;
+  execBtn.textContent = '\u25a0 Stop';
+  execBtn.classList.add('running');
+  execBtn.disabled    = false;
+  recBtn.disabled     = true;
+  clearSeqBtn.disabled = true;
+
+  const dwell = parseInt(seqDwellEl.value, 10);
+  log('Executing sequence: ' + waypoints.length + ' stops, dwell=' + dwell + 'ms', 'l-tx');
+
+  for (let i = 0; i < waypoints.length; i++) {
+    if (seqAbort) break;
+
+    const wp = waypoints[i];
+
+    // Highlight current stop point
+    wpListEl.querySelectorAll('.wp-item').forEach(el => el.classList.remove('active'));
+    const item = wpListEl.querySelector(`.wp-item[data-idx="${i}"]`);
+    if (item) { item.classList.add('active'); item.scrollIntoView({ block: 'nearest' }); }
+
+    // ── Phase 1: Move arm joints (everything except gripper) ──
+    let maxArmDelta = 0;
+    ARM_KEYS.forEach(k => {
+      maxArmDelta = Math.max(maxArmDelta, Math.abs(wp[k] - state[k]));
+    });
+
+    log('\u2192 Stop #' + (i + 1) + ' arm: [' + ARM_KEYS.map(k => wp[k]).join(' ') + ']', 'l-tx');
+
+    const armTravelMs = Math.max(SEQ_MIN_ARM_MS, maxArmDelta * SEQ_ARM_MS_PER_DEG);
+    await moveJointsSmooth(ARM_KEYS, wp, armTravelMs);
+    if (seqAbort) break;
+
+    // ── Phase 2: Gripper acts AFTER arm arrives ──
+    const gripDelta = Math.abs(wp.gripper - state.gripper);
+    if (gripDelta > 0) {
+      log('  \u2192 Gripper: ' + wp.gripper + '\u00b0', 'l-tx');
+      const gripTravelMs = Math.max(SEQ_MIN_GRIP_MS, gripDelta * SEQ_GRIP_MS_PER_DEG);
+      await moveJointsSmooth(['gripper'], wp, gripTravelMs);
+      if (seqAbort) break;
+    }
+
+    // Dwell at stop point
+    await sleep(dwell);
+  }
+
+  // Clear highlight
+  wpListEl.querySelectorAll('.wp-item').forEach(el => el.classList.remove('active'));
+
+  const wasAborted = seqAbort;
+  seqRunning = false;
+  seqAbort   = false;
+  execBtn.textContent = '\u25b6 Execute';
+  execBtn.classList.remove('running');
+  recBtn.disabled      = false;
+  renderWaypoints();
+  log(wasAborted ? 'Sequence aborted.' : 'Sequence complete.', wasAborted ? 'l-err' : 'l-tx');
+}
+
+execBtn.addEventListener('click', () => {
+  if (seqRunning) {
+    seqAbort = true;
+    log('Aborting sequence...', 'l-err');
+  } else {
+    executeSequence();
+  }
+});
+
+renderWaypoints();
 
 // ─── 3D Visualization ────────────────────────────────────────────────────────
 (function init3D() {
