@@ -38,7 +38,8 @@ import argparse
 import os
 import time
 
-from kinematics import ARM, ArmModel, Unreachable, ik, reach_limits
+from kinematics import (ARM, ArmModel, Unreachable, ik, load_calibration,
+                        reach_limits)
 
 
 def plan_segment(p0, p1, steps, model: ArmModel = ARM, elbow_up: bool = True):
@@ -132,6 +133,8 @@ def build_args():
                    help="interpolation samples per segment")
     p.add_argument("--elbow-down", action="store_true",
                    help="use the elbow-down IK branch (default is elbow-up)")
+    p.add_argument("--calibration", metavar="FILE",
+                   help="load calibration.json (servo offsets, L3, shoulder height)")
     return p.parse_args()
 
 
@@ -143,16 +146,20 @@ def main() -> int:
         print("nothing to do: pass --goto X Y Z or --demo")
         return 2
 
+    model = load_calibration(args.calibration) if args.calibration else ARM
+    if args.calibration:
+        print(f"loaded calibration from {args.calibration}")
+
     try:
         if args.goto:
-            plan = plan_segment(tuple(args.goto), tuple(args.goto), 0, ARM, elbow_up)
-            band = reach_limits(args.goto[2])
+            plan = plan_segment(tuple(args.goto), tuple(args.goto), 0, model, elbow_up)
+            band = reach_limits(args.goto[2], model)
             if band:
                 print(f"reach band at z={args.goto[2]:.0f}: "
                       f"{band[0]:.0f}..{band[1]:.0f} mm radius")
         else:
             kp = three_axis_keypoints(tuple(args.center), args.span)
-            plan = plan_path(kp, args.steps, ARM, elbow_up)
+            plan = plan_path(kp, args.steps, model, elbow_up)
     except Unreachable as exc:
         print(f"ABORT (fail-closed): {exc}")
         return 1

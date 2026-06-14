@@ -788,12 +788,43 @@
           </div>
         </div>
 
+        <style>
+          .calib-hint{font-size:11px;color:#9aa;margin:4px 0 8px;line-height:1.45}
+          .calib-joint{border-top:1px solid rgba(128,128,128,.18);padding:6px 0}
+          .cj-head{font-size:12px;margin-bottom:4px}
+          .cj-srv{font-weight:700}
+          .cj-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+          .cj-ang{width:72px}
+          .cj-fit{font-size:11px;margin-top:4px;color:#9aa}
+          .cj-fit.ok{color:#46c46a}
+          .calib-scalars{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0}
+          .calib-scalars label{font-size:11px;display:flex;flex-direction:column;gap:2px;color:#9aa}
+          .calib-scalars input{width:96px}
+        </style>
+        <div class="panel">
+          <div class="panel-title"><span>Calibration</span><span id="calibStatus">0/4 joints</span></div>
+          <div class="calib-hint">Jog a joint to a geometrically-known pose, type that angle, and Capture — twice per joint. The fit maps servo&harr;angle; the 3D view then shows the REAL pose. Convention: shoulder = elevation from horizontal (0 flat, 90 up); elbow/wrist = bend vs. the previous link (0 = straight); base = yaw (0 = +X).</div>
+          <div id="calibJoints"></div>
+          <div class="calib-scalars">
+            <label>L3 wrist→tip (mm)<input type="number" id="calL3" value="100" step="1"></label>
+            <label>Shoulder height (mm)<input type="number" id="calH" value="200" step="1"></label>
+            <label>Gripper open<input type="number" id="calGripOpen" value="110"></label>
+            <label>Gripper closed<input type="number" id="calGripClosed" value="45"></label>
+          </div>
+          <div class="actions">
+            <button id="calibExport">Export calibration.json</button>
+            <button id="calibImportBtn">Import</button>
+            <input type="file" id="calibImport" accept="application/json" style="display:none">
+            <button id="calibClear">Clear</button>
+          </div>
+        </div>
+
         <div class="panel">
           <div class="panel-title">Connection</div>
           <div class="stat-row"><span class="k">Baud</span><span class="v">115200</span></div>
           <div class="stat-row"><span class="k">Protocol</span><span class="v">ACK handshake</span></div>
-          <div class="stat-row"><span class="k">CR Servos</span><span class="v">Base only</span></div>
-          <div class="stat-row"><span class="k">POS Servos</span><span class="v">Arm A, Arm B, Wrist, Grip</span></div>
+          <div class="stat-row"><span class="k">CR Servos</span><span class="v">None</span></div>
+          <div class="stat-row"><span class="k">POS Servos</span><span class="v">All 6 (base now position)</span></div>
           <div class="stat-row"><span class="k">Browser</span><span class="v" id="browserOK">Checking...</span></div>
         </div>
 
@@ -834,6 +865,39 @@ const jogTimers = {};
 let port = null, writer = null, reader = null;
 let readLoopAbort = false;
 let pktCount = 0;
+
+// ─── Calibration (servo <-> geometric angle) ───────────────────────────────────
+// Per joint: caps[2] = two {servo, angle} captures -> linear fit angle = m*servo + c.
+// Shared with the 3D viewer (animate) and exported to calibration.json for
+// kinematics.py. Geometric convention MATCHES kinematics.py:
+//   root  = base yaw (0 = +X)
+//   armA  = shoulder elevation from horizontal (0 = flat, 90 = straight up)
+//   armB  = elbow bend relative to the lower arm (0 = straight)
+//   wristA= wrist bend relative to the upper arm (0 = in line)
+const CALIB = { joints: {}, L3: 100, H_SHOULDER: 200, gripper_open: 110, gripper_closed: 45 };
+// Flip a sign here if a joint renders mirrored in the 3D view after calibration.
+const VIEW = { root: 1, armA: 1, armB: 1, wristA: 1 };
+const CALIB_JOINTS = [
+  ['root',   'Base (Root) — yaw, 0 = +X'],
+  ['armA',   'Arm A1/A2 — shoulder elevation, 0 flat / 90 up'],
+  ['armB',   'Arm B — elbow bend, 0 = straight'],
+  ['wristA', 'Wrist A — wrist bend, 0 = in line'],
+];
+
+function calibRecompute(key) {
+  const j = CALIB.joints[key];
+  if (!j) return;
+  const [p0, p1] = j.caps;
+  if (p0 && p1 && p0.servo !== p1.servo) {
+    j.m = (p1.angle - p0.angle) / (p1.servo - p0.servo);
+    j.c = p0.angle - j.m * p0.servo;
+  } else { j.m = null; j.c = null; }
+}
+// Geometric angle (deg) of a joint at its current servo, or null if uncalibrated.
+function geomOf(key) {
+  const j = CALIB.joints[key];
+  return (j && j.m != null) ? j.m * state[key] + j.c : null;
+}
 
 // ─── Send queue ───────────────────────────────────────────────────────────────
 let sendBusy    = false;
@@ -946,6 +1010,144 @@ servosEl.addEventListener('input', e => {
   document.querySelector(`[data-val="${key}"]`).textContent = v;
   if (document.getElementById('liveSend').checked) sendPacket();
 });
+
+// ─── Calibration panel ──────────────────────────────────────────────────────
+(function buildCalibration() {
+  const host = document.getElementById('calibJoints');
+  if (!host) return;
+  CALIB_JOINTS.forEach(([key, label]) => {
+    CALIB.joints[key] = { caps: [null, null], m: null, c: null };
+    const row = document.createElement('div');
+    row.className = 'calib-joint';
+    row.innerHTML = `
+      <div class="cj-head">${label} &middot; servo <span class="cj-srv" data-srv="${key}">--</span></div>
+      <div class="cj-row">
+        <input type="number" class="cj-ang" data-key="${key}" data-slot="0" placeholder="angle&deg;">
+        <button class="cj-grab" data-key="${key}" data-slot="0">capture 1</button>
+        <input type="number" class="cj-ang" data-key="${key}" data-slot="1" placeholder="angle&deg;">
+        <button class="cj-grab" data-key="${key}" data-slot="1">capture 2</button>
+      </div>
+      <div class="cj-fit" data-fit="${key}">not calibrated</div>`;
+    host.appendChild(row);
+  });
+
+  host.addEventListener('click', e => {
+    const btn = e.target.closest('.cj-grab');
+    if (!btn) return;
+    const key = btn.dataset.key, slot = +btn.dataset.slot;
+    const inp = host.querySelector(`.cj-ang[data-key="${key}"][data-slot="${slot}"]`);
+    const angle = parseFloat(inp.value);
+    if (Number.isNaN(angle)) { log('Calib: type the geometric angle first.', 'l-err'); return; }
+    CALIB.joints[key].caps[slot] = { servo: state[key], angle };
+    calibRecompute(key);
+    updateCalibUI();
+    log(`Calib ${key}: P${slot + 1} servo=${state[key]} angle=${angle}`, 'l-tx');
+  });
+
+  document.getElementById('calibExport').addEventListener('click', exportCalibration);
+  document.getElementById('calibClear').addEventListener('click', () => {
+    CALIB_JOINTS.forEach(([k]) => CALIB.joints[k] = { caps: [null, null], m: null, c: null });
+    updateCalibUI(); log('Calibration cleared.', 'l-err');
+  });
+  const fileInput = document.getElementById('calibImport');
+  document.getElementById('calibImportBtn').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', importCalibration);
+
+  setInterval(updateCalibUI, 150);   // keep the live servo + fit-at-current readouts fresh
+  updateCalibUI();
+})();
+
+function updateCalibUI() {
+  let done = 0;
+  CALIB_JOINTS.forEach(([key]) => {
+    const srv = document.querySelector(`.cj-srv[data-srv="${key}"]`);
+    if (srv) srv.textContent = state[key];
+    const fit = document.querySelector(`.cj-fit[data-fit="${key}"]`);
+    const j = CALIB.joints[key];
+    if (!fit) return;
+    if (j && j.m != null) {
+      const g = geomOf(key);
+      fit.textContent = `angle = ${j.m.toFixed(3)}·servo ${j.c >= 0 ? '+' : '−'} ${Math.abs(j.c).toFixed(1)}   →   now ${g.toFixed(1)}°`;
+      fit.classList.add('ok');
+      done++;
+    } else {
+      const n = j ? j.caps.filter(Boolean).length : 0;
+      fit.textContent = `not calibrated (${n}/2 captured)`;
+      fit.classList.remove('ok');
+    }
+  });
+  const status = document.getElementById('calibStatus');
+  if (status) status.textContent = done === CALIB_JOINTS.length ? 'calibrated ✓' : `${done}/${CALIB_JOINTS.length} joints`;
+}
+
+function buildCalibrationJSON() {
+  const joints = {};
+  CALIB_JOINTS.forEach(([key]) => {
+    const j = CALIB.joints[key];
+    if (j && j.m != null) {
+      const k = 1 / j.m, b = -j.c / j.m;     // servo = k*angle + b
+      joints[key] = {
+        servo_at_zero: +b.toFixed(3),
+        servo_per_deg: +k.toFixed(5),
+        fit: { m: j.m, c: j.c },
+        captures: j.caps,
+      };
+    }
+  });
+  return {
+    version: 1,
+    generated_by: 'inference.html calibration panel',
+    joints,
+    L3_mm: parseFloat(document.getElementById('calL3').value),
+    H_shoulder_mm: parseFloat(document.getElementById('calH').value),
+    gripper_open: parseInt(document.getElementById('calGripOpen').value, 10),
+    gripper_closed: parseInt(document.getElementById('calGripClosed').value, 10),
+  };
+}
+
+function exportCalibration() {
+  const blob = new Blob([JSON.stringify(buildCalibrationJSON(), null, 2)],
+                        { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'calibration.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log('Calibration exported to calibration.json', 'l-tx');
+}
+
+function importCalibration(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    try {
+      const data = JSON.parse(fr.result);
+      CALIB_JOINTS.forEach(([key]) => {
+        const d = data.joints && data.joints[key];
+        const j = { caps: [null, null], m: null, c: null };
+        if (d) {
+          if (Array.isArray(d.captures) && d.captures[0] && d.captures[1]) {
+            j.caps = d.captures.slice(0, 2);
+          }
+          if (d.fit && d.fit.m != null) { j.m = d.fit.m; j.c = d.fit.c; }
+          else if (d.servo_per_deg) { j.m = 1 / d.servo_per_deg; j.c = -d.servo_at_zero / d.servo_per_deg; }
+        }
+        CALIB.joints[key] = j;
+      });
+      if (data.L3_mm != null) document.getElementById('calL3').value = data.L3_mm;
+      if (data.H_shoulder_mm != null) document.getElementById('calH').value = data.H_shoulder_mm;
+      if (data.gripper_open != null) document.getElementById('calGripOpen').value = data.gripper_open;
+      if (data.gripper_closed != null) document.getElementById('calGripClosed').value = data.gripper_closed;
+      updateCalibUI();
+      log('Calibration imported.', 'l-tx');
+    } catch (err) {
+      log('Calib import failed: ' + err.message, 'l-err');
+    }
+  };
+  fr.readAsText(file);
+  e.target.value = '';
+}
 
 // ─── CR jog logic ─────────────────────────────────────────────────────────────
 function startJog(key, dir) {
@@ -1677,17 +1879,28 @@ renderWaypoints();
     requestAnimationFrame(animate);
     const dt = clock.getDelta();
 
-    // Base — direct angle (position servo)
-    baseGroup.rotation.y = (state.root - 90) * DEG;
+    // Each joint: if calibrated, render the REAL geometric angle (geomOf);
+    // otherwise fall back to the cosmetic rest-pose mapping.
+    const gRoot = geomOf('root');
+    baseGroup.rotation.y = (gRoot === null ? (state.root - 90) : gRoot * VIEW.root) * DEG;
 
-    // Arm A — shoulder pitch
-    shoulderPivot.rotation.z = REST_SHOULDER + (state.armA - 90) * DEG;
+    // Arm A — shoulder: geom = elevation from horizontal (90 = straight up)
+    const gSh = geomOf('armA');
+    shoulderPivot.rotation.z = (gSh === null)
+      ? REST_SHOULDER + (state.armA - 90) * DEG
+      : (90 - gSh) * VIEW.armA * DEG;
 
-    // Arm B — elbow pitch
-    elbowPivot.rotation.z = REST_ELBOW - (state.armB - 90) * DEG;
+    // Arm B — elbow: geom = bend relative to lower arm (0 = straight)
+    const gEl = geomOf('armB');
+    elbowPivot.rotation.z = (gEl === null)
+      ? REST_ELBOW - (state.armB - 90) * DEG
+      : (-gEl) * VIEW.armB * DEG;
 
-    // Wrist A — pitch (up/down tilt)
-    wristAPivot.rotation.z = REST_WRIST_A + (state.wristA - 90) * DEG;
+    // Wrist A — geom = bend relative to upper arm (0 = in line)
+    const gWr = geomOf('wristA');
+    wristAPivot.rotation.z = (gWr === null)
+      ? REST_WRIST_A + (state.wristA - 90) * DEG
+      : (-gWr) * VIEW.wristA * DEG;
 
     // Wrist B — roll
     wristBPivot.rotation.y = (state.wristB - 90) * DEG;

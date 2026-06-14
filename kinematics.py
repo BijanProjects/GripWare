@@ -50,8 +50,10 @@ Run the built-in self-test (no hardware needed):
 
 from __future__ import annotations
 
+import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 
 class Unreachable(ValueError):
@@ -60,23 +62,39 @@ class Unreachable(ValueError):
 
 @dataclass(frozen=True)
 class JointMap:
-    """Affine map from a geometric joint angle (deg) to a 0..180 servo value.
+    """Affine map between a geometric joint angle (deg) and a 0..180 servo value.
 
-        servo = clamp(offset + sign * angle_deg, lo, hi)
+        servo = clamp(servo_at_zero + servo_per_deg * angle_deg, lo, hi)
+        angle = (servo - servo_at_zero) / servo_per_deg
 
-    `offset` is the servo value at geometric angle 0; `sign` flips direction
-    if the servo turns the opposite way from the geometric convention. These
-    are the per-joint M11 calibration values -- defaults are placeholders.
+    `servo_at_zero` is the servo value when the joint is at geometric 0;
+    `servo_per_deg` carries both sign (direction) and scale (servo units per
+    degree, in case of gearing or the mirrored shoulder). Defaults (90, 1.0)
+    are an uncalibrated 1:1 placeholder. Calibrate with the dashboard panel ->
+    calibration.json -> load_calibration().
     """
 
-    offset: float = 90.0
-    sign: float = 1.0
+    servo_at_zero: float = 90.0
+    servo_per_deg: float = 1.0
     lo: float = 0.0
     hi: float = 180.0
 
     def to_servo(self, angle_deg: float) -> int:
-        v = self.offset + self.sign * angle_deg
+        v = self.servo_at_zero + self.servo_per_deg * angle_deg
         return int(round(max(self.lo, min(self.hi, v))))
+
+    def to_angle(self, servo: float) -> float:
+        return (servo - self.servo_at_zero) / self.servo_per_deg
+
+    @staticmethod
+    def from_two_points(s1, a1, s2, a2, lo=0.0, hi=180.0) -> "JointMap":
+        """Fit from two (servo, geometric-angle) captures."""
+        if s2 == s1:
+            raise ValueError("two captures share the same servo value")
+        m = (a2 - a1) / (s2 - s1)          # angle = m*servo + c
+        k = 1.0 / m                         # servo = k*angle + b
+        b = s1 - k * a1
+        return JointMap(servo_at_zero=b, servo_per_deg=k, lo=lo, hi=hi)
 
 
 @dataclass(frozen=True)
@@ -109,6 +127,44 @@ class ArmModel:
 
 
 ARM = ArmModel()
+
+
+# Maps calibration.json joint keys (the firmware/dashboard names) to the
+# ArmModel field that holds that joint's servo map.
+_CAL_KEY_TO_FIELD = {
+    "root": "base_map",
+    "armA": "shoulder_map",
+    "armB": "elbow_map",
+    "wristA": "wrist_a_map",
+}
+
+
+def load_calibration(path="calibration.json", base: ArmModel = ARM) -> ArmModel:
+    """Build an ArmModel from a calibration.json exported by the dashboard
+    Calibration panel. Missing fields fall back to `base`. See the panel's
+    export for the schema (joints[*].servo_at_zero/servo_per_deg, L3_mm,
+    H_shoulder_mm, gripper_open/closed).
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    joints = data.get("joints", {})
+    overrides = {}
+    for key, field_name in _CAL_KEY_TO_FIELD.items():
+        d = joints.get(key)
+        if not d or "servo_at_zero" not in d or "servo_per_deg" not in d:
+            continue
+        overrides[field_name] = JointMap(
+            servo_at_zero=float(d["servo_at_zero"]),
+            servo_per_deg=float(d["servo_per_deg"]),
+            lo=float(d.get("lo", 0.0)), hi=float(d.get("hi", 180.0)))
+    if "L3_mm" in data:
+        overrides["L3"] = float(data["L3_mm"])
+    if "H_shoulder_mm" in data:
+        overrides["H_SHOULDER"] = float(data["H_shoulder_mm"])
+    if "gripper_open" in data:
+        overrides["GRIPPER_OPEN"] = int(data["gripper_open"])
+    if "gripper_closed" in data:
+        overrides["GRIPPER_CLOSED"] = int(data["gripper_closed"])
+    return replace(base, **overrides)
 
 
 # ---------------------------------------------------------------------------
