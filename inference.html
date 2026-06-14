@@ -789,21 +789,29 @@
         </div>
 
         <style>
-          .calib-hint{font-size:11px;color:#9aa;margin:4px 0 8px;line-height:1.45}
-          .calib-joint{border-top:1px solid rgba(128,128,128,.18);padding:6px 0}
-          .cj-head{font-size:12px;margin-bottom:4px}
-          .cj-srv{font-weight:700}
-          .cj-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-          .cj-ang{width:72px}
-          .cj-fit{font-size:11px;margin-top:4px;color:#9aa}
+          .calib-hint{font-size:11px;color:#8a93a0;margin:2px 0 6px;line-height:1.45}
+          .calib-joint{border-top:1px solid rgba(128,128,128,.14);padding:9px 0}
+          .calib-joint:first-child{border-top:none;padding-top:2px}
+          .cj-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+          .cj-name{font-size:12px;font-weight:600;color:#cdd3db}
+          .cj-srv{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;color:#cdd3db}
+          .cj-srv::before{content:'servo ';font-weight:400;color:#7e8893}
+          .cj-conv{font-size:10px;color:#7e8893;margin:1px 0 7px}
+          .cj-pts{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+          .cj-pt{display:flex;gap:5px;align-items:center}
+          .cj-ang{width:100%;min-width:0;padding:5px 6px}
+          button.cj-grab{flex:0 0 auto;width:auto;margin:0;padding:5px 9px;font-size:10px;letter-spacing:.03em}
+          .cj-fit{font-size:11px;margin-top:7px;color:#7e8893;font-variant-numeric:tabular-nums}
           .cj-fit.ok{color:#46c46a}
-          .calib-scalars{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0}
-          .calib-scalars label{font-size:11px;display:flex;flex-direction:column;gap:2px;color:#9aa}
-          .calib-scalars input{width:96px}
+          .calib-scalars{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;margin:12px 0 10px}
+          .calib-scalars label{font-size:11px;display:flex;flex-direction:column;gap:3px;color:#9aa}
+          .calib-scalars input{width:100%;padding:5px 6px}
+          .calib-actions{display:flex;gap:6px;margin-top:4px}
+          .calib-actions button{flex:1 1 0;margin:0}
         </style>
         <div class="panel">
           <div class="panel-title"><span>Calibration</span><span id="calibStatus">0/4 joints</span></div>
-          <div class="calib-hint">Jog a joint to a geometrically-known pose, type that angle, and Capture — twice per joint. The fit maps servo&harr;angle; the 3D view then shows the REAL pose. Convention: shoulder = elevation from horizontal (0 flat, 90 up); elbow/wrist = bend vs. the previous link (0 = straight); base = yaw (0 = +X).</div>
+          <div class="calib-hint">Jog a joint to a known pose, type the angle, and tap <b>Set</b> — twice per joint. The fit maps servo&harr;angle and the 3D view then shows the real pose.</div>
           <div id="calibJoints"></div>
           <div class="calib-scalars">
             <label>L3 wrist→tip (mm)<input type="number" id="calL3" value="100" step="1"></label>
@@ -811,8 +819,8 @@
             <label>Gripper open<input type="number" id="calGripOpen" value="110"></label>
             <label>Gripper closed<input type="number" id="calGripClosed" value="45"></label>
           </div>
-          <div class="actions">
-            <button id="calibExport">Export calibration.json</button>
+          <div class="calib-actions">
+            <button id="calibExport">Export</button>
             <button id="calibImportBtn">Import</button>
             <input type="file" id="calibImport" accept="application/json" style="display:none">
             <button id="calibClear">Clear</button>
@@ -878,10 +886,10 @@ const CALIB = { joints: {}, L3: 100, H_SHOULDER: 200, gripper_open: 110, gripper
 // Flip a sign here if a joint renders mirrored in the 3D view after calibration.
 const VIEW = { root: 1, armA: 1, armB: 1, wristA: 1 };
 const CALIB_JOINTS = [
-  ['root',   'Base (Root) — yaw, 0 = +X'],
-  ['armA',   'Arm A1/A2 — shoulder elevation, 0 flat / 90 up'],
-  ['armB',   'Arm B — elbow bend, 0 = straight'],
-  ['wristA', 'Wrist A — wrist bend, 0 = in line'],
+  ['root',   'Base (Root)', 'yaw · 0 = +X'],
+  ['armA',   'Arm A1/A2',   'shoulder elevation · 0 flat, 90 up'],
+  ['armB',   'Arm B',       'elbow bend · 0 = straight'],
+  ['wristA', 'Wrist A',     'wrist bend · 0 = in line'],
 ];
 
 function calibRecompute(key) {
@@ -1015,19 +1023,24 @@ servosEl.addEventListener('input', e => {
 (function buildCalibration() {
   const host = document.getElementById('calibJoints');
   if (!host) return;
-  CALIB_JOINTS.forEach(([key, label]) => {
+  CALIB_JOINTS.forEach(([key, name, conv]) => {
     CALIB.joints[key] = { caps: [null, null], m: null, c: null };
     const row = document.createElement('div');
     row.className = 'calib-joint';
     row.innerHTML = `
-      <div class="cj-head">${label} &middot; servo <span class="cj-srv" data-srv="${key}">--</span></div>
-      <div class="cj-row">
-        <input type="number" class="cj-ang" data-key="${key}" data-slot="0" placeholder="angle&deg;">
-        <button class="cj-grab" data-key="${key}" data-slot="0">capture 1</button>
-        <input type="number" class="cj-ang" data-key="${key}" data-slot="1" placeholder="angle&deg;">
-        <button class="cj-grab" data-key="${key}" data-slot="1">capture 2</button>
+      <div class="cj-head"><span class="cj-name">${name}</span><span class="cj-srv" data-srv="${key}">--</span></div>
+      <div class="cj-conv">${conv}</div>
+      <div class="cj-pts">
+        <div class="cj-pt">
+          <input type="number" class="cj-ang" data-key="${key}" data-slot="0" placeholder="angle&deg;">
+          <button class="cj-grab" data-key="${key}" data-slot="0">Set 1</button>
+        </div>
+        <div class="cj-pt">
+          <input type="number" class="cj-ang" data-key="${key}" data-slot="1" placeholder="angle&deg;">
+          <button class="cj-grab" data-key="${key}" data-slot="1">Set 2</button>
+        </div>
       </div>
-      <div class="cj-fit" data-fit="${key}">not calibrated</div>`;
+      <div class="cj-fit" data-fit="${key}">not calibrated (0/2)</div>`;
     host.appendChild(row);
   });
 
@@ -1072,7 +1085,7 @@ function updateCalibUI() {
       done++;
     } else {
       const n = j ? j.caps.filter(Boolean).length : 0;
-      fit.textContent = `not calibrated (${n}/2 captured)`;
+      fit.textContent = `not calibrated (${n}/2)`;
       fit.classList.remove('ok');
     }
   });
