@@ -4,7 +4,7 @@
 **Cadence**: twice weekly — **Tuesday + Friday**
 **Kickoff**: Tue 2026-05-26
 **Demo target**: Fri 2026-07-31 (~10 calendar weeks)
-**Plan reference**: see the full plan with technical reasoning at `C:\Users\bijan\.claude\plans\okay-so-we-have-jolly-teacup.md`
+**Plan reference**: see the full plan with technical reasoning in [ROADMAP.md](ROADMAP.md) (committed in this repo).
 
 **How to read the table**:
 - **Description** combines the *deliverable* (what gets built) and the *acceptance test* (how you know it works). A task is "done" only when its acceptance test passes — never on partial implementation.
@@ -67,6 +67,6 @@ Layer-A tasks (M01–M05) are early enough that anyone can pick them up; the spl
 
 ---
 
-## Out-of-band: the optional hardware swap
+## Out-of-band: the hardware swap — ✅ DONE (2026-05-24)
 
-If you decide to swap the base CR servo for a position servo + 4:1 gear reduction (sub-tasks H1–H3 in the plan), insert these between Layer C and Layer D and **skip M14–M16**. The track shortens by ~1.5 calendar weeks.
+The base CR servo was swapped for a position servo, so the base is now commanded as an absolute angle. **M14–M16 are superseded** — ALIGN collapses to "command base angle = atan2(cube_Y, cube_X) − servo offset," optionally fine-tuned by one vision-correction step. Treat M14 (dead-band) and M15 (velocity char) as obsolete; M16 becomes an open-loop absolute command. See the revised Layer D note in [ROADMAP.md](ROADMAP.md). The track shortens by ~1.5 calendar weeks.
